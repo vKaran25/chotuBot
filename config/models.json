@@ -1,0 +1,37 @@
+{
+  "_note": "Allowlist of models the owner permits, by provider ('openrouter' default, or 'nim' for NVIDIA NIM testing). Prices are USD per 1M tokens, used only to estimate cost when the provider reports none (NIM free tier: 0). Every model must support tool calling.",
+  "models": [
+    {
+      "id": "openai/gpt-5-nano",
+      "label": "GPT-5 Nano",
+      "input_per_mtok_usd": 0.05,
+      "output_per_mtok_usd": 0.4,
+      "tool_capable": true,
+      "provider": "openrouter"
+    },
+    {
+      "id": "openai/gpt-oss-20b",
+      "label": "GPT-OSS 20B",
+      "input_per_mtok_usd": 0.03,
+      "output_per_mtok_usd": 0.13,
+      "tool_capable": true,
+      "provider": "openrouter"
+    },
+    {
+      "id": "openai/gpt-oss-20b",
+      "label": "GPT-OSS 20B (NIM, timed out in testing)",
+      "input_per_mtok_usd": 0,
+      "output_per_mtok_usd": 0,
+      "tool_capable": true,
+      "provider": "nim"
+    },
+    {
+      "id": "nvidia/nemotron-3.5-lightning-30b-a3b",
+      "label": "Nemotron 3.5 Lightning 30B-A3B (NIM, fast - default for NIM)",
+      "input_per_mtok_usd": 0,
+      "output_per_mtok_usd": 0,
+      "tool_capable": true,
+      "provider": "nim"
+    }
+  ]
+}

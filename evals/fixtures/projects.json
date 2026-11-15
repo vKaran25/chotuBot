@@ -1,0 +1,8 @@
+{
+  "fixture_version": "1",
+  "projects": [
+    {"name": "atlas", "status": "on_track", "owner": "Priya", "progress_percent": 72, "next_milestone": "Beta release", "due_date": "2026-12-15"},
+    {"name": "beacon", "status": "at_risk", "owner": "Rahul", "progress_percent": 38, "next_milestone": "API freeze", "due_date": "2026-11-30"},
+    {"name": "cedar", "status": "completed", "owner": "Meera", "progress_percent": 100, "next_milestone": "Retrospective", "due_date": "2026-10-01"}
+  ]
+}
