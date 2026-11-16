@@ -33,17 +33,12 @@ CREATE TABLE IF NOT EXISTS usage_records (
     input_tokens INTEGER,
     output_tokens INTEGER,
     total_tokens INTEGER,
-    cost_usd REAL NOT NULL DEFAULT 0,
-    cost_inr REAL NOT NULL DEFAULT 0,
-    cost_source TEXT NOT NULL DEFAULT 'none',
     latency_ms INTEGER NOT NULL,
     status TEXT NOT NULL,
     error_code TEXT,
     tool_call_count INTEGER NOT NULL DEFAULT 0,
-    month_key TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_usage_month ON usage_records(month_key);
 CREATE TABLE IF NOT EXISTS app_settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -69,6 +64,18 @@ class Storage:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._conn() as c:
             c.executescript(SCHEMA)
+            self._drop_legacy_cost_columns(c)
+
+    @staticmethod
+    def _drop_legacy_cost_columns(c: sqlite3.Connection) -> None:
+        """Databases created by earlier versions have cost/budget columns; remove them in place."""
+        cols = {r["name"] for r in c.execute("PRAGMA table_info(usage_records)")}
+        if "month_key" in cols:
+            c.execute("DROP INDEX IF EXISTS idx_usage_month")
+        for col in ("cost_usd", "cost_inr", "cost_source", "month_key"):
+            if col in cols:
+                c.execute(f"ALTER TABLE usage_records DROP COLUMN {col}")
+        c.execute("DELETE FROM app_settings WHERE key='monthly_budget_inr'")
 
     @contextmanager
     def _conn(self) -> Iterator[sqlite3.Connection]:
@@ -122,6 +129,22 @@ class Storage:
         out["message_count"] = len(msgs)
         return out
 
+    def delete_session(self, sid: str) -> bool:
+        """Permanently remove a conversation and everything the agent could recall from it.
+
+        The agent's context is rebuilt from the `messages` table on every request, so deleting the messages
+        (user text, assistant text and stored tool activity) removes it from memory. Usage records hold only
+        counters, no content; they are kept for the totals but unlinked from the deleted conversation.
+        All of it happens in one transaction.
+        """
+        with self._conn() as c:
+            if c.execute("SELECT 1 FROM sessions WHERE id=?", (sid,)).fetchone() is None:
+                return False
+            c.execute("DELETE FROM messages WHERE session_id=?", (sid,))
+            c.execute("UPDATE usage_records SET session_id=NULL WHERE session_id=?", (sid,))
+            c.execute("DELETE FROM sessions WHERE id=?", (sid,))
+        return True
+
     def recent_messages(self, sid: str, limit: int) -> list[dict[str, str]]:
         with self._conn() as c:
             rows = c.execute(
@@ -166,8 +189,8 @@ class Storage:
 
     # ---- usage ----------------------------------------------------------
     USAGE_COLS = (
-        "request_id session_id model input_tokens output_tokens total_tokens cost_usd cost_inr "
-        "cost_source latency_ms status error_code tool_call_count month_key created_at"
+        "request_id session_id model input_tokens output_tokens total_tokens "
+        "latency_ms status error_code tool_call_count created_at"
     ).split()
 
     def add_usage(self, rec: dict[str, Any]) -> None:
@@ -178,19 +201,21 @@ class Storage:
                 [rec.get(k) for k in cols],
             )
 
-    def month_spend_inr(self, month_key: str) -> float:
-        with self._conn() as c:
-            row = c.execute(
-                "SELECT COALESCE(SUM(cost_inr),0) AS s FROM usage_records WHERE month_key=?", (month_key,)
-            ).fetchone()
-        return float(row["s"])
-
     def list_usage(self, limit: int = 50) -> list[dict[str, Any]]:
         with self._conn() as c:
             rows = c.execute(
                 "SELECT * FROM usage_records ORDER BY created_at DESC, rowid DESC LIMIT ?", (limit,)
             ).fetchall()
         return [dict(r) for r in rows]
+
+    def usage_overview(self, limit: int = 50) -> dict[str, Any]:
+        with self._conn() as c:
+            t = c.execute(
+                "SELECT COUNT(*) AS n, COALESCE(SUM(total_tokens),0) AS tok, COALESCE(AVG(latency_ms),0) AS lat "
+                "FROM usage_records"
+            ).fetchone()
+        return {"totals": {"requests": t["n"], "total_tokens": t["tok"], "avg_latency_ms": round(t["lat"])},
+                "records": self.list_usage(limit)}
 
     # ---- settings -------------------------------------------------------
     def get_setting(self, key: str) -> str | None:

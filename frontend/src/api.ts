@@ -14,7 +14,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       headers: init?.body ? { "Content-Type": "application/json" } : undefined,
     });
   } catch {
-    throw new ApiError(0, "network_error", "Cannot reach the local backend. Is it running on 127.0.0.1:8000?");
+    throw new ApiError(0, "network_error", "Cannot reach the local backend. Is it running?");
   }
   const text = await res.text();
   let data: unknown = null;
@@ -38,8 +38,9 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ message, session_id: sessionId }),
     }),
+  deleteSession: (id: string) => request<null>(`/api/sessions/${id}`, { method: "DELETE" }),
   getSettings: () => request<AppSettings>("/api/settings"),
-  putSettings: (body: { model?: string; monthly_budget_inr?: number }) =>
+  putSettings: (body: { model: string }) =>
     request<AppSettings>("/api/settings", { method: "PUT", body: JSON.stringify(body) }),
   getUsage: () => request<UsageSummary>("/api/usage"),
 };

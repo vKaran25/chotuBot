@@ -72,7 +72,7 @@ def build_report(ds: Dataset, ds_path: Path, results: list[CaseResult], mode: st
             "FROZEN: scripted provider responses. Verifies validation, tool authorization, error handling, persistence and "
             "usage records end to end. It does NOT measure real-model tool-selection quality; that needs a live run."
             if mode == "frozen" else
-            "LIVE: real OpenRouter model. Results depend on the model and cost real money."
+            "LIVE: real NVIDIA NIM model. Results depend on the model and use your provider quota."
         ),
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "git_commit": _git_commit(repo_root),
@@ -87,8 +87,8 @@ def build_report(ds: Dataset, ds_path: Path, results: list[CaseResult], mode: st
             "argument_correctness": _rate([r.argument_correct for r in executed]),
             "task_success": _rate([r.task_success for r in executed]),
             "latency_ms": distribution([r.latency_ms for r in executed if r.latency_ms is not None]),
-            "cost_inr": distribution([r.cost_inr for r in executed if r.cost_inr is not None]),
-            "cost_note": "frozen-mode cost/latency come from scripted responses and are not representative of a real model" if mode == "frozen" else "local estimates, not provider billing",
+            "tokens": distribution([r.total_tokens for r in executed if r.total_tokens is not None]),
+            "latency_note": "frozen-mode latency/tokens come from scripted responses and are not representative of a real model" if mode == "frozen" else "measured against the real provider",
             "by_category": by_cat,
         },
         "gates": {
@@ -99,7 +99,7 @@ def build_report(ds: Dataset, ds_path: Path, results: list[CaseResult], mode: st
             "dataset_matches_8_10_6_6": {"pass": ds.distribution_matches_spec()},
         },
         "not_covered_here": [
-            "Live-model tool-selection accuracy (run with --mode live, costs money)." if mode == "frozen" else "Frozen-only fault cases (outage, malformed output) are skipped in live mode.",
+            "Live-model tool-selection accuracy (run with --mode live; uses your provider quota)." if mode == "frozen" else "Frozen-only fault cases (outage, malformed output) are skipped in live mode.",
             "Mandatory deterministic pytest suite (run `python -m pytest`).",
             "Independent evaluator approval (P1-REQ-20).",
         ],
@@ -127,11 +127,11 @@ def render_markdown(rep: dict[str, Any]) -> str:
     L += ["", "| Category | Cases | Tool selection | Arguments | Task success |", "|---|---|---|---|---|"]
     for cat, d in m["by_category"].items():
         L.append(f"| {cat} | {d['cases']} | {_pct(d['tool_selection']['accuracy'])} | {_pct(d['argument_correctness']['accuracy'])} | {_pct(d['task_success']['accuracy'])} |")
-    for key, unit in (("latency_ms", "ms"), ("cost_inr", "INR")):
+    for key, unit in (("latency_ms", "ms"), ("tokens", "tokens")):
         d = m[key]
         if d["n"]:
             L += ["", f"**{key}** (n={d['n']}): min {d['min']:.4g}, p50 {d['p50']:.4g}, p95 {d['p95']:.4g}, max {d['max']:.4g}, mean {d['mean']:.4g}, total {d['total']:.4g} {unit}"]
-    L += ["", f"_{m['cost_note']}_", "", "## Gates", "", "| Gate | Result |", "|---|---|"]
+    L += ["", f"_{m['latency_note']}_", "", "## Gates", "", "| Gate | Result |", "|---|---|"]
     ts = g["tool_selection_at_least_90pct"]
     if ts["pass"] is None:
         L.append(f"| Tool selection >= 90% | N/A in frozen mode (scripted answers match by construction: {_pct(ts['value'])}); needs a live run |")
@@ -150,9 +150,9 @@ def render_markdown(rep: dict[str, Any]) -> str:
         L.append("None among executed cases.")
     if rep["skipped"]:
         L += ["", "## Skipped", ""] + [f"- `{s['id']}`: {s['reason']}" for s in rep["skipped"]]
-    L += ["", "## Per-case results", "", "| Case | Review | HTTP | Tools (status) | Selection | Args | Success | ms | INR |", "|---|---|---|---|---|---|---|---|---|"]
+    L += ["", "## Per-case results", "", "| Case | Review | HTTP | Tools (status) | Selection | Args | Success | ms | tokens |", "|---|---|---|---|---|---|---|---|---|"]
     for c in rep["cases"]:
         tools = ", ".join(f"{x['name']}({x['status']})" for x in c["tools"]) or "-"
         mark = lambda v: "-" if v is None else ("yes" if v else "NO")
-        L.append(f"| {c['id']} | {'pending' if c['review_status'] == PENDING else 'reviewed'} | {c['http_status'] if c['executed'] else 'skipped'} | {tools} | {mark(c['tool_selection_correct'])} | {mark(c['argument_correct'])} | {mark(c['task_success'])} | {c['latency_ms'] if c['latency_ms'] is not None else '-'} | {('%.5f' % c['cost_inr']) if c['cost_inr'] is not None else '-'} |")
+        L.append(f"| {c['id']} | {'pending' if c['review_status'] == PENDING else 'reviewed'} | {c['http_status'] if c['executed'] else 'skipped'} | {tools} | {mark(c['tool_selection_correct'])} | {mark(c['argument_correct'])} | {mark(c['task_success'])} | {c['latency_ms'] if c['latency_ms'] is not None else '-'} | {c['total_tokens'] if c['total_tokens'] is not None else '-'} |")
     return "\n".join(L) + "\n"

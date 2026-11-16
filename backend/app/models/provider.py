@@ -1,4 +1,4 @@
-"""Chat model construction: OpenRouter BYOK (P1-REQ-4, P1-REQ-9) or, for testing, NVIDIA NIM (ADR 0002)."""
+"""Chat model construction: NVIDIA NIM (or the offline demo model)."""
 from __future__ import annotations
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -8,7 +8,7 @@ from app.models.fakes import DemoChatModel
 
 
 class MissingApiKey(Exception):
-    """No OpenRouter key is configured on the backend."""
+    """No NVIDIA API key is configured on the backend."""
 
 
 class ModelNotAllowed(Exception):
@@ -16,7 +16,7 @@ class ModelNotAllowed(Exception):
 
 
 def allowed_models(settings: Settings) -> list[ModelInfo]:
-    return [m for m in settings.load_models() if m.tool_capable and m.provider == settings.model_provider]
+    return [m for m in settings.load_models() if m.tool_capable]
 
 
 def find_model(settings: Settings, model_id: str) -> ModelInfo:
@@ -34,22 +34,11 @@ def build_chat_model(settings: Settings, model_id: str) -> BaseChatModel:
         raise MissingApiKey(f"{settings.key_env_var} is not configured")
     find_model(settings, model_id)
 
-    if settings.provider == "nim":
-        from langchain_nvidia_ai_endpoints import ChatNVIDIA
+    from langchain_nvidia_ai_endpoints import ChatNVIDIA
 
-        return ChatNVIDIA(
-            model=model_id,
-            api_key=settings.nvidia_api_key.get_secret_value(),
-            temperature=0,
-            usage_telemetry_enabled=False,  # send nothing to NVIDIA beyond the inference request itself
-        )
-
-    from langchain_openrouter import ChatOpenRouter
-
-    return ChatOpenRouter(
+    return ChatNVIDIA(
         model=model_id,
-        api_key=settings.openrouter_api_key,  # SecretStr; langchain-openrouter unwraps it internally
+        api_key=settings.nvidia_api_key.get_secret_value(),
         temperature=0,
-        timeout=settings.request_timeout_s * 1000,  # milliseconds
-        max_retries=0,  # fail fast: a local chat should report an outage, not hang for minutes
+        usage_telemetry_enabled=False,  # send nothing to NVIDIA beyond the inference request itself
     )
