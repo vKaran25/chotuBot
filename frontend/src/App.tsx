@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, api } from "./api";
 import Composer from "./components/Composer";
+import MessageBody from "./components/MessageBody";
 import ConfirmDialog from "./components/ConfirmDialog";
 import SettingsPanel from "./components/SettingsPanel";
 import Sidebar from "./components/Sidebar";
@@ -215,7 +216,7 @@ export default function App() {
           {messages.map((m) => (
             <article key={m.id} className={`msg ${m.role}`}>
               <h2 className="sr-only">{m.role === "user" ? "You" : "Assistant"}</h2>
-              <p className="msg-text">{m.content}</p>
+              {m.role === "assistant" ? <MessageBody text={m.content} /> : <p className="msg-text">{m.content}</p>}
               <ToolActivityList activity={m.tool_activity} />
             </article>
           ))}

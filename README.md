@@ -17,7 +17,13 @@ Set up and run the chotuBot project for me, so I do not have to do anything by h
 6. Ask me whether I have an NVIDIA NIM API key (NVIDIA_API_KEY) or want the offline demo (CHOTU_PROVIDER=demo, no key). Set CHOTU_PROVIDER in .env accordingly (nim or demo).
 7. Do NOT ask me to paste an API key into this chat and never print one. Tell me to open .env myself, paste the key on the right line, and save; wait until I say it is done. Then check only that the line is non-empty, without showing its value.
 8. Run the backend with: python -m app (keep it running in the background) and confirm http://127.0.0.1:8765/api/health returns ok.
-9. Tell me to open http://127.0.0.1:8765 and suggest I try: "What is the status of atlas?"
+9. Tell me to open http://127.0.0.1:8765, then give me these brief instructions for using it:
+   - Type in the box at the bottom and press Enter (Shift+Enter for a new line).
+   - Try "What is the status of atlas?" or "Search my notes for security", and click the tool entry under the answer to see what it ran.
+   - "New chat" in the sidebar starts a fresh conversation; click an earlier chat to reopen it.
+   - To delete a chat, hover it in the sidebar, click the ... button, choose Delete and confirm.
+   - The Settings button (top right) shows the key status and lets me pick the model.
+   - To stop the app, press Ctrl+C in the terminal where it is running.
 
 Only change files in this project folder. Do not commit, push, or send my keys anywhere.
 ````
@@ -27,11 +33,22 @@ Only change files in this project folder. Do not commit, push, or send my keys a
 - Chat with a tool-using agent (FastAPI + LangGraph + LangChain)
 - Two read-only demo tools: project status and note search, with the tool calls shown in the chat
 - Models via NVIDIA NIM (free tier works), plus an offline demo mode that needs no key
-- Conversation history in a local SQLite file, with a sidebar to reopen past chats
+- Conversation history in a local SQLite file, with a sidebar to reopen or delete past chats
 - Per-request usage tracking (tokens, latency, tool calls)
 - Responsive React + TypeScript UI (works from 360px wide)
 - Local only: binds to `127.0.0.1`; your API key never reaches the browser
 - Optional LangSmith tracing, off by default and redacted when on
+
+## Using the app
+
+Once the server is running, open <http://127.0.0.1:8765>:
+
+- **Chat:** type in the box at the bottom and press Enter (Shift+Enter adds a new line). Answers appear in the main area.
+- **Try the demo tools:** ask "What is the status of atlas?" or "Search my notes for security". Click the tool entry under the answer to see what it ran and what it returned.
+- **New chat / past chats:** use **New chat** in the sidebar. Click any earlier chat to reopen it (on a phone, open the sidebar with the menu button).
+- **Delete a chat:** hover a chat in the sidebar, click the **...** button, choose **Delete** and confirm. This permanently removes it from history and from the assistant's memory.
+- **Settings:** the **Settings** button (top right) shows whether your key is configured, lets you pick the model, and lists recent requests with tokens and latency.
+- **Stop the app:** press Ctrl+C in the terminal running `python -m app`. Your chats are kept for next time.
 
 ## Run locally
 
@@ -54,8 +71,6 @@ Start the app and open <http://127.0.0.1:8765>:
 ```powershell
 python -m app
 ```
-
-Try "What is the status of atlas?" or "Search my notes for budget".
 
 For UI development with hot reload, keep the backend running and use `cd frontend; npm run dev` (<http://127.0.0.1:5173>).
 
