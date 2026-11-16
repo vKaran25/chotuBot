@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, api } from "./api";
 import Composer from "./components/Composer";
+import ConfirmDialog from "./components/ConfirmDialog";
 import SettingsPanel from "./components/SettingsPanel";
 import Sidebar from "./components/Sidebar";
 import ToolActivityList from "./components/ToolActivityList";
@@ -25,6 +26,9 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [usage, setUsage] = useState<UsageSummary | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<SessionSummary | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const loadToken = useRef(0); // ignores responses for a conversation the user already left
   const endRef = useRef<HTMLDivElement>(null);
   const settingsBtnRef = useRef<HTMLButtonElement>(null);
@@ -126,7 +130,36 @@ export default function App() {
     }
   };
 
-  const saveSettings = async (body: { model?: string; monthly_budget_inr?: number }) => {
+  const confirmDelete = async () => {
+    if (!pendingDelete || deleting) return;
+    const target = pendingDelete;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await api.deleteSession(target.id);
+    } catch (e) {
+      // 404 means it is already gone, which is the outcome the owner wanted.
+      if (!(e instanceof ApiError && e.status === 404)) {
+        setDeleteError(toUiError(e).message);
+        setDeleting(false);
+        return;
+      }
+    }
+    if (target.id === activeId) newChat();
+    setSessions((list) => list.filter((s) => s.id !== target.id));
+    setPendingDelete(null);
+    setDeleting(false);
+    void refreshSessions();
+    void refreshSettingsAndUsage();
+  };
+
+  const cancelDelete = () => {
+    if (deleting) return;
+    setPendingDelete(null);
+    setDeleteError(null);
+  };
+
+  const saveSettings = async (body: { model: string }) => {
     try {
       setSettings(await api.putSettings(body));
       setUsage(await api.getUsage());
@@ -139,15 +172,19 @@ export default function App() {
   return (
     <div className="app">
       <Sidebar
-        inert={settingsOpen}
+        inert={settingsOpen || pendingDelete !== null}
         sessions={sessions}
         activeId={activeId}
         open={sidebarOpen}
         onSelect={(id) => void selectSession(id)}
         onNew={newChat}
         onClose={() => setSidebarOpen(false)}
+        onRequestDelete={(s) => {
+          setDeleteError(null);
+          setPendingDelete(s);
+        }}
       />
-      <main className="chat" inert={settingsOpen}>
+      <main className="chat" inert={settingsOpen || pendingDelete !== null}>
         <header className="chat-head">
           <button type="button" className="menu" onClick={() => setSidebarOpen(true)} aria-label="Open conversations">
             ☰
@@ -198,6 +235,18 @@ export default function App() {
 
         <Composer value={input} pending={pending} onChange={setInput} onSend={() => void send()} />
       </main>
+
+      {pendingDelete && (
+        <ConfirmDialog
+          title="Delete this chat?"
+          message={`Are you sure you want to delete “${pendingDelete.title}”? It will be permanently removed from your history and from the assistant's memory of this conversation. This can't be undone.`}
+          confirmLabel="Delete"
+          busy={deleting}
+          error={deleteError}
+          onConfirm={() => void confirmDelete()}
+          onCancel={cancelDelete}
+        />
+      )}
 
       {settingsOpen && (
         <>

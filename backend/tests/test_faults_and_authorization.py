@@ -1,87 +1,14 @@
-"""P1-T22 (budget), P1-T31 (provider errors, malformed output, tool failure), P1-T17 (injection)."""
+"""Provider errors, malformed output, tool failure, and tool authorization/injection."""
 from __future__ import annotations
-
-from datetime import datetime
-from zoneinfo import ZoneInfo
 
 import pytest
 
 from app.models.fakes import ProviderOutage
-from app.security.budget import month_key
 from tests.helpers import call, make_client, text
-
-IST = ZoneInfo("Asia/Kolkata")
-UTC = ZoneInfo("UTC")
 
 
 def err(r):
     return r.json()["error"]
-
-
-def spend(client, inr: float):
-    """Insert an already-recorded spend into the current month's usage."""
-    svc = client.app.state.services
-    svc.storage.add_usage({
-        "request_id": f"seed{inr}", "session_id": None, "model": "x", "cost_usd": inr / 100, "cost_inr": inr,
-        "cost_source": "provider", "latency_ms": 1, "status": "ok", "tool_call_count": 0,
-        "month_key": svc.chat.guard.current_month(), "created_at": "2026-11-01T00:00:00+00:00",
-    })
-
-
-# ---- budget guard ----------------------------------------------------------
-def test_request_allowed_below_budget(settings):
-    c, factory = make_client(settings, [text("fine")])
-    spend(c, 299.99)
-    assert c.post("/api/chat", json={"message": "hi"}).status_code == 200
-    assert factory.built == 1
-
-
-@pytest.mark.parametrize("spent", [300.0, 450.0])
-def test_request_blocked_at_or_above_budget_and_no_paid_call_made(settings, spent):
-    c, factory = make_client(settings, [text("must not run")])
-    spend(c, spent)
-    r = c.post("/api/chat", json={"message": "hi"})
-    assert r.status_code == 402 and err(r)["code"] == "budget_exhausted"
-    assert factory.built == 0, "no model object was even created, so no paid call could be made"
-    assert "estimate" in err(r)["message"]
-    assert c.get("/api/sessions").json()["sessions"] == []
-    blocked = c.get("/api/usage").json()["records"][0]
-    assert blocked["status"] == "blocked_budget" and blocked["cost_inr"] == 0
-
-
-def test_budget_blocks_after_a_costly_request_pushes_spend_over(settings):
-    # one request costing $4 = INR 400 at the fixture rate of 100 -> next one is blocked
-    c, factory = make_client(settings, [{"content": "big", "input_tokens": 1, "output_tokens": 1, "cost_usd": 4.0}], [text("no")])
-    assert c.post("/api/chat", json={"message": "one"}).status_code == 200
-    r = c.post("/api/chat", json={"message": "two"})
-    assert r.status_code == 402 and factory.built == 1
-
-
-def test_budget_setting_change_takes_effect_and_zero_blocks_everything(settings):
-    c, factory = make_client(settings, [text("x")])
-    c.put("/api/settings", json={"monthly_budget_inr": 0})
-    assert c.post("/api/chat", json={"message": "hi"}).status_code == 402 and factory.built == 0
-    c.put("/api/settings", json={"monthly_budget_inr": 10})
-    assert c.post("/api/chat", json={"message": "hi"}).status_code == 200
-
-
-def test_month_resets_in_asia_kolkata_not_utc(settings):
-    # 2026-11-30 19:00 UTC is already 2026-12-01 00:30 in Kolkata
-    assert month_key(datetime(2026, 11, 30, 19, 0, tzinfo=UTC), "Asia/Kolkata") == "2026-12"
-    assert month_key(datetime(2026, 11, 30, 18, 0, tzinfo=UTC), "Asia/Kolkata") == "2026-11"
-    c, _ = make_client(settings, [text("new month ok")])
-    c.app.state.services.chat.guard.clock = lambda: datetime(2026, 11, 30, 12, 0, tzinfo=IST)
-    spend(c, 500)
-    assert c.post("/api/chat", json={"message": "hi"}).status_code == 402
-    c.app.state.services.chat.guard.clock = lambda: datetime(2026, 12, 1, 0, 5, tzinfo=IST)
-    assert c.post("/api/chat", json={"message": "hi"}).status_code == 200
-
-
-def test_usage_reports_remaining_budget(settings):
-    c, _ = make_client(settings)
-    spend(c, 120)
-    u = c.get("/api/usage").json()
-    assert u["spent_inr"] == 120 and u["budget_inr"] == 300 and u["remaining_inr"] == 180
 
 
 # ---- provider / model faults (P1-REQ-19) ----------------------------------------
@@ -92,11 +19,11 @@ def test_provider_outage_is_503_and_recorded(settings):
     assert c.get("/api/usage").json()["records"][0]["status"] == "provider_error"
 
 
-def test_provider_error_after_tool_step_still_counts_earlier_cost(settings):
+def test_provider_error_after_tool_step_still_counts_earlier_tool_call(settings):
     c, _ = make_client(settings, [call("get_project_status", {}), RuntimeError("down")])
     assert c.post("/api/chat", json={"message": "hi"}).status_code == 503
     rec = c.get("/api/usage").json()["records"][0]
-    assert rec["cost_usd"] == pytest.approx(0.0002) and rec["tool_call_count"] == 1
+    assert rec["total_tokens"] == 28 and rec["tool_call_count"] == 1
 
 
 @pytest.mark.parametrize(

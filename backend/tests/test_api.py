@@ -85,11 +85,11 @@ def test_non_json_body_rejected(settings, ctype):
 ])
 def test_cross_site_mutations_are_forbidden_and_spend_nothing(settings, hdrs):
     c, factory = make_client(settings, [text("never")])
-    for method, path, body in [("post", "/api/chat", {"message": "hi"}), ("put", "/api/settings", {"monthly_budget_inr": 1e6}),
+    for method, path, body in [("post", "/api/chat", {"message": "hi"}), ("put", "/api/settings", {"model": "evil/unlisted"}),
                                ("post", "/api/sessions", {})]:
         r = getattr(c, method)(path, json=body, headers=hdrs)
         assert r.status_code == 403 and err(r)["code"] == "forbidden_origin"
-    assert factory.built == 0 and c.get("/api/settings").json()["monthly_budget_inr"] == 300
+    assert factory.built == 0
 
 
 @pytest.mark.parametrize("origin", ["http://localhost:5173", "http://127.0.0.1:8000"])
@@ -233,25 +233,15 @@ def test_usage_record_written_and_queryable(settings):
     assert rec["model"] == settings.default_model
     assert (rec["input_tokens"], rec["output_tokens"], rec["total_tokens"]) == (30, 13, 43)
     assert rec["tool_call_count"] == 1 and rec["latency_ms"] >= 0
-    assert rec["cost_usd"] == pytest.approx(0.0003) and rec["cost_source"] == "provider"
-    assert rec["cost_inr"] == pytest.approx(0.0003 * 100.0)  # fixture usd_to_inr = 100
-    assert u["spent_inr"] == pytest.approx(0.03)
-    assert "not a guarantee" in u["disclaimer"]
-
-
-def test_cost_estimated_from_tokens_when_provider_reports_none(settings):
-    c, _ = make_client(settings, [{"content": "hi", "input_tokens": 1_000_000, "output_tokens": 1_000_000}])
-    c.post("/api/chat", json={"message": "hi"})
-    [rec] = c.get("/api/usage").json()["records"]
-    # default model allowlist price: $0.05 in + $0.40 out per 1M tokens
-    assert rec["cost_source"] == "estimated" and rec["cost_usd"] == pytest.approx(0.45)
+    assert not {"cost_usd", "cost_inr", "month_key"} & set(rec)  # no cost or budget tracking
+    assert u["totals"] == {"requests": 1, "total_tokens": 43, "avg_latency_ms": rec["latency_ms"]}
 
 
 def test_usage_unavailable_when_no_token_data(settings):
     c, _ = make_client(settings, [{"content": "hi"}])
     c.post("/api/chat", json={"message": "hi"})
     [rec] = c.get("/api/usage").json()["records"]
-    assert rec["input_tokens"] is None and rec["cost_source"] == "unavailable" and rec["cost_usd"] == 0
+    assert rec["input_tokens"] is None and rec["total_tokens"] is None
 
 
 def test_failed_requests_are_recorded_too(settings):
@@ -259,3 +249,41 @@ def test_failed_requests_are_recorded_too(settings):
     c.post("/api/chat", json={"message": "hi"})
     [rec] = c.get("/api/usage").json()["records"]
     assert rec["status"] == "provider_error" and rec["error_code"] == "provider_unavailable"
+
+
+# ---- deleting a conversation ---------------------------------------------------
+def test_delete_session_removes_it_and_its_memory(settings):
+    c, _ = make_client(settings, [call("get_project_status", {"project": "atlas"}), text("Atlas is on track.")], [text("keep")])
+    gone = c.post("/api/chat", json={"message": "secret-codeword-42 atlas status?"}).json()["session_id"]
+    kept = c.post("/api/chat", json={"message": "unrelated chat"}).json()["session_id"]
+    r = c.delete(f"/api/sessions/{gone}")
+    assert r.status_code == 204 and r.content == b""
+    assert c.get(f"/api/sessions/{gone}").status_code == 404
+    assert [s["id"] for s in c.get("/api/sessions").json()["sessions"]] == [kept]
+    # Nothing of the deleted conversation is left in the database (messages, tool activity, titles).
+    import sqlite3
+    db = sqlite3.connect(settings.resolve(settings.db_path))
+    dump = " ".join(str(v) for t in ("sessions", "messages") for row in db.execute(f"SELECT * FROM {t}") for v in row)
+    assert "secret-codeword-42" not in dump and "on_track" not in dump and gone not in dump
+    assert db.execute("SELECT COUNT(*) FROM usage_records WHERE session_id=?", (gone,)).fetchone()[0] == 0
+    assert db.execute("SELECT COUNT(*) FROM usage_records").fetchone()[0] == 2  # counters kept, link removed
+    # The other conversation is untouched.
+    assert len(c.get(f"/api/sessions/{kept}").json()["messages"]) == 2
+    # Continuing a deleted conversation is impossible: it cannot be resurrected with its old context.
+    assert c.post("/api/chat", json={"message": "hi", "session_id": gone}).status_code == 404
+
+
+def test_delete_unknown_or_malformed_session_is_404_and_deletes_nothing(settings):
+    c, _ = make_client(settings, [text("a")])
+    sid = c.post("/api/chat", json={"message": "hello"}).json()["session_id"]
+    for bad in ("a" * 32, "not-an-id"):
+        assert c.delete(f"/api/sessions/{bad}").status_code == 404
+    assert c.delete("/api/sessions/..%2f..%2fx").status_code in (404, 405)  # matches no route; nothing is touched
+    assert len(c.get("/api/sessions").json()["sessions"]) == 1 and c.get(f"/api/sessions/{sid}").status_code == 200
+
+
+def test_delete_is_blocked_cross_site(settings):
+    c, _ = make_client(settings, [text("a")])
+    sid = c.post("/api/chat", json={"message": "hello"}).json()["session_id"]
+    r = c.delete(f"/api/sessions/{sid}", headers={"origin": "https://evil.example"})
+    assert r.status_code == 403 and c.get(f"/api/sessions/{sid}").status_code == 200

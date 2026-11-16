@@ -7,7 +7,6 @@ from typing import Any, Iterable
 
 REDACTED = "[REDACTED]"
 _PATTERNS = [
-    re.compile(r"sk-or-[A-Za-z0-9_\-]{6,}"),
     re.compile(r"lsv2_[A-Za-z0-9_\-]{6,}"),
     re.compile(r"nvapi-[A-Za-z0-9_\-]{6,}"),
     re.compile(r"(?i)bearer\s+[A-Za-z0-9._\-]{8,}"),

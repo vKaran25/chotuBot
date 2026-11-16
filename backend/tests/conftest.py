@@ -9,7 +9,7 @@ from app.storage import Storage
 from app.tools.registry import SampleToolRegistry
 
 FIXTURES = REPO_ROOT / "evals" / "fixtures"
-TEST_KEY = "sk-or-v1-TEST-SENTINEL-0123456789abcdef"
+TEST_KEY = "nvapi-TEST-SENTINEL-0123456789abcdef"
 
 
 @pytest.fixture
@@ -32,9 +32,7 @@ def settings(tmp_db: Path) -> Settings:
     """Isolated settings: never reads the developer's real .env or key."""
     return Settings(
         _env_file=None,
-        OPENROUTER_API_KEY=TEST_KEY,
-        CHOTU_PROVIDER="openrouter",
+        NVIDIA_API_KEY=TEST_KEY,
+        CHOTU_PROVIDER="nim",
         CHOTU_DB_PATH=tmp_db,
-        CHOTU_MONTHLY_BUDGET_INR=300,
-        CHOTU_USD_TO_INR=100.0,
     )

@@ -32,9 +32,6 @@ export interface RequestUsage {
   input_tokens: number | null;
   output_tokens: number | null;
   total_tokens: number | null;
-  cost_usd: number;
-  cost_inr: number;
-  cost_source: string;
   latency_ms: number;
   tool_call_count: number;
 }
@@ -58,8 +55,6 @@ export interface AppSettings {
   key_env_var: string;
   model: string;
   models: ModelOption[];
-  monthly_budget_inr: number;
-  usd_to_inr: number;
   tracing_enabled: boolean;
 }
 
@@ -67,8 +62,6 @@ export interface UsageRecord {
   request_id: string;
   model: string;
   total_tokens: number | null;
-  cost_inr: number;
-  cost_source: string;
   latency_ms: number;
   status: string;
   error_code: string | null;
@@ -77,11 +70,6 @@ export interface UsageRecord {
 }
 
 export interface UsageSummary {
-  month: string;
-  spent_inr: number;
-  budget_inr: number;
-  remaining_inr: number;
-  usd_to_inr: number;
-  disclaimer: string;
+  totals: { requests: number; total_tokens: number; avg_latency_ms: number };
   records: UsageRecord[];
 }

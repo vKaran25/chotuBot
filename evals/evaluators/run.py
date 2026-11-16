@@ -1,6 +1,6 @@
 """CLI: `python -m evals.evaluators.run [--mode frozen|live]`.
 
-Frozen mode is free and deterministic. Live mode spends real money and is never run implicitly.
+Frozen mode is free and deterministic. Live mode calls the real provider and is never run implicitly.
 """
 from __future__ import annotations
 
@@ -22,17 +22,16 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="Run the Phase 1 golden evaluation.")
     p.add_argument("--mode", choices=["frozen", "live"], default="frozen")
     p.add_argument("--dataset", type=Path, default=DEFAULT_DATASET)
-    p.add_argument("--budget-inr", type=float, default=10.0, help="live mode only: spend cap for the whole run")
-    p.add_argument("--confirm-live", action="store_true", help="required for live mode: acknowledges real API cost")
+    p.add_argument("--confirm-live", action="store_true", help="required for live mode: acknowledges real provider calls")
     p.add_argument("--out", type=Path, default=REPORT_DIR)
     args = p.parse_args(argv)
 
     ds_path = args.dataset.resolve()
     ds = load_dataset(ds_path)
     if args.mode == "live" and not args.confirm_live:
-        print("Live mode makes paid OpenRouter calls. Re-run with --confirm-live to proceed.", file=sys.stderr)
+        print("Live mode calls the real NVIDIA NIM API. Re-run with --confirm-live to proceed.", file=sys.stderr)
         return 2
-    results = run_frozen(ds.cases) if args.mode == "frozen" else run_live_cases(ds.cases, args.budget_inr)
+    results = run_frozen(ds.cases) if args.mode == "frozen" else run_live_cases(ds.cases)
     rep = build_report(ds, ds_path, results, args.mode, REPO_ROOT)
 
     args.out.mkdir(parents=True, exist_ok=True)

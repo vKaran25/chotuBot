@@ -97,7 +97,7 @@ def test_opt_in_tracer_redacts_what_it_would_send(tmp_db, monkeypatch):
 # ---- log scrubbing ---------------------------------------------------------
 def test_scrub_function():
     assert TEST_KEY not in scrub(f"error with {TEST_KEY} here")
-    assert "sk-or-v1-abcdef123456" not in scrub("token sk-or-v1-abcdef123456")
+    assert "nvapi-abcdef123456" not in scrub("token nvapi-abcdef123456")
     assert "Bearer abcdefghijkl" not in scrub("Authorization: Bearer abcdefghijkl")
     assert scrub("nothing sensitive") == "nothing sensitive"
 

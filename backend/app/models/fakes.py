@@ -102,7 +102,6 @@ class DemoChatModel(BaseChatModel):
         n_in = sum(len(str(m.content)) for m in messages) // 4 + 1
         n_out = len(str(msg.content)) // 4 + 1
         msg.usage_metadata = {"input_tokens": n_in, "output_tokens": n_out, "total_tokens": n_in + n_out}
-        msg.response_metadata = {"cost": round((n_in * 0.05 + n_out * 0.4) / 1_000_000, 8)}
         return ChatResult(generations=[ChatGeneration(message=msg)])
 
     @staticmethod

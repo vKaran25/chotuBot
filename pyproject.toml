@@ -10,9 +10,7 @@ dependencies = [
     "pydantic-settings>=2.3",
     "langgraph>=1.0",
     "langchain-core>=1.0",
-    "langchain-openrouter",
     "langchain-nvidia-ai-endpoints",
-    "tzdata; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]

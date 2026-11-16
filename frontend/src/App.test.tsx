@@ -1,14 +1,14 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+﻿import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 
 const SETTINGS = {
-  provider: "openrouter", key_configured: true, key_env_var: "OPENROUTER_API_KEY", model: "m/a",
+  provider: "nim", key_configured: true, key_env_var: "NVIDIA_API_KEY", model: "m/a",
   models: [{ id: "m/a", label: "A" }, { id: "m/b", label: "B" }],
-  monthly_budget_inr: 300, usd_to_inr: 90, tracing_enabled: false,
+  tracing_enabled: false,
 };
-const USAGE = { month: "2026-11", spent_inr: 1.5, budget_inr: 300, remaining_inr: 298.5, usd_to_inr: 90, disclaimer: "Costs are local estimates.", records: [] };
+const USAGE = { totals: { requests: 3, total_tokens: 1200, avg_latency_ms: 800 }, records: [] };
 const SID = "a".repeat(32);
 
 type Handler = (url: string, init?: RequestInit) => { status?: number; body: unknown } | undefined;
@@ -67,14 +67,14 @@ describe("App", () => {
 
   it("shows the API error, keeps the draft and drops the unsaved message", async () => {
     mockFetch((url, init) => {
-      if (url === "/api/chat") return { status: 402, body: { error: { code: "budget_exhausted", message: "The monthly model budget is used up." } } };
+      if (url === "/api/chat") return { status: 503, body: { error: { code: "provider_unavailable", message: "The model provider is unavailable." } } };
       return base(url, init);
     });
     const user = userEvent.setup();
     render(<App />);
     await user.type(screen.getByLabelText("Message"), "hello");
     await user.click(screen.getByRole("button", { name: "Send" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("The monthly model budget is used up.");
+    expect(await screen.findByRole("alert")).toHaveTextContent("The model provider is unavailable.");
     expect(screen.getByLabelText("Message")).toHaveValue("hello");
     expect(screen.queryByRole("article")).not.toBeInTheDocument();
   });
@@ -104,7 +104,7 @@ describe("App", () => {
     const trigger = screen.getByRole("button", { name: "Settings" });
     await user.click(trigger);
     const dialog = await screen.findByRole("dialog");
-    const select = within(dialog).getByLabelText("Tool-capable model");
+    const select = within(dialog).getByLabelText("Model");
     await user.selectOptions(select, "m/b");
     await waitFor(() => expect(select).toHaveValue("m/b"));
     expect(select).toHaveFocus();
@@ -129,9 +129,102 @@ describe("App", () => {
     });
     const user = userEvent.setup();
     render(<App />);
-    await user.click(await screen.findByRole("button", { name: /Old chat/ }));
+    await user.click(await screen.findByRole("button", { name: /^Old chat/ }));
     expect(await screen.findByText("earlier answer")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Old chat/ })).toHaveAttribute("aria-current", "true");
+    expect(screen.getByRole("button", { name: /^Old chat/ })).toHaveAttribute("aria-current", "true");
+  });
+
+  describe("deleting a chat", () => {
+    const summary = { id: SID, title: "Old chat", created_at: "2026-11-15T00:00:00+00:00", updated_at: "2026-11-15T00:00:00+00:00", message_count: 2 };
+    const detail = { ...summary, messages: [{ id: 1, role: "user", content: "earlier question", tool_activity: [] }, { id: 2, role: "assistant", content: "earlier answer", tool_activity: [] }] };
+
+    function setup(deleteResult: { status: number; body: unknown } = { status: 204, body: null }) {
+      let sessions = [summary];
+      const fn = vi.fn(async (url: string, init?: RequestInit) => {
+        if (url === "/api/sessions") return new Response(JSON.stringify({ sessions }), { status: 200 });
+        if (url === `/api/sessions/${SID}` && init?.method === "DELETE") {
+          if (deleteResult.status === 204) sessions = [];
+          return new Response(deleteResult.status === 204 ? null : JSON.stringify(deleteResult.body), { status: deleteResult.status });
+        }
+        if (url === `/api/sessions/${SID}`) return new Response(JSON.stringify(detail), { status: 200 });
+        if (url === "/api/settings") return new Response(JSON.stringify(SETTINGS), { status: 200 });
+        if (url === "/api/usage") return new Response(JSON.stringify(USAGE), { status: 200 });
+        throw new Error(`unexpected fetch ${url}`);
+      });
+      vi.stubGlobal("fetch", fn);
+      return fn;
+    }
+    const deletes = (fn: ReturnType<typeof vi.fn>) => fn.mock.calls.filter((c) => (c[1] as RequestInit | undefined)?.method === "DELETE");
+
+    it("asks for confirmation, and cancelling deletes nothing", async () => {
+      const fn = setup();
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await screen.findByRole("button", { name: "Options for Old chat" }));
+      await user.click(screen.getByRole("menuitem", { name: "Delete" }));
+      const dlg = await screen.findByRole("alertdialog");
+      expect(dlg).toHaveTextContent("Are you sure you want to delete");
+      expect(dlg).toHaveTextContent("assistant's memory");
+      expect(within(dlg).getByRole("button", { name: "Cancel" })).toHaveFocus();
+      await user.click(within(dlg).getByRole("button", { name: "Cancel" }));
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+      expect(deletes(fn)).toHaveLength(0);
+      expect(screen.getByRole("button", { name: /^Old chat/ })).toBeInTheDocument();
+    });
+
+    it("Escape also cancels", async () => {
+      const fn = setup();
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await screen.findByRole("button", { name: "Options for Old chat" }));
+      await user.click(screen.getByRole("menuitem", { name: "Delete" }));
+      await screen.findByRole("alertdialog");
+      await user.keyboard("{Escape}");
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+      expect(deletes(fn)).toHaveLength(0);
+    });
+
+    it("confirming deletes the open chat, clears the screen and removes it from the sidebar", async () => {
+      const fn = setup();
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await screen.findByRole("button", { name: /^Old chat/ }));
+      expect(await screen.findByText("earlier answer")).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Options for Old chat" }));
+      await user.click(screen.getByRole("menuitem", { name: "Delete" }));
+      await user.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Delete" }));
+      await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+      expect(deletes(fn)).toHaveLength(1);
+      expect(deletes(fn)[0][0]).toBe(`/api/sessions/${SID}`);
+      expect(screen.queryByText("earlier answer")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /^Old chat/ })).not.toBeInTheDocument();
+      expect(screen.getByText("No conversations yet.")).toBeInTheDocument();
+    });
+
+    it("keeps the chat and shows the error when deletion fails", async () => {
+      setup({ status: 500, body: { error: { code: "internal_error", message: "An internal error occurred." } } });
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await screen.findByRole("button", { name: "Options for Old chat" }));
+      await user.click(screen.getByRole("menuitem", { name: "Delete" }));
+      const dlg = await screen.findByRole("alertdialog");
+      await user.click(within(dlg).getByRole("button", { name: "Delete" }));
+      expect(await within(dlg).findByRole("alert")).toHaveTextContent("An internal error occurred.");
+      expect(screen.getByRole("button", { name: /^Old chat/ })).toBeInTheDocument();
+    });
+  });
+
+  it("settings panel has no key-explainer text and no extra label under the Model heading", async () => {
+    mockFetch(base);
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).queryByText(/is read from/)).not.toBeInTheDocument();
+    expect(within(dialog).queryByText(/never sent to this page/)).not.toBeInTheDocument();
+    expect(within(dialog).queryByText("Tool-capable model")).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("heading", { name: "Model" })).toBeInTheDocument();
+    expect(within(dialog).getByLabelText("Model")).toBeInTheDocument();
   });
 
   it("send is disabled for blank input", async () => {
@@ -155,17 +248,19 @@ describe("App", () => {
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText("configured")).toBeInTheDocument();
     expect(within(dialog).queryByRole("textbox", { name: /key/i })).not.toBeInTheDocument();
-    expect(await within(dialog).findByText(/Costs are local estimates/)).toBeInTheDocument();
-    await user.selectOptions(within(dialog).getByLabelText("Tool-capable model"), "m/b");
+    expect(await within(dialog).findByText(/3 requests, 1,200 tokens/)).toBeInTheDocument();
+    await user.selectOptions(within(dialog).getByLabelText("Model"), "m/b");
     await waitFor(() => expect(fn).toHaveBeenCalledWith("/api/settings", expect.objectContaining({ method: "PUT", body: JSON.stringify({ model: "m/b" }) })));
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("warns when no key is configured", async () => {
-    mockFetch((url, init) => (url === "/api/settings" ? { body: { ...SETTINGS, provider: "nim", key_env_var: "NVIDIA_API_KEY", key_configured: false } } : base(url, init)));
+    mockFetch((url, init) => (url === "/api/settings" ? { body: { ...SETTINGS, key_configured: false } } : base(url, init)));
     render(<App />);
     expect(await screen.findByText(/No API key is configured/)).toBeInTheDocument();
     expect(screen.getByText("NVIDIA_API_KEY")).toBeInTheDocument();
   });
 });
+
+

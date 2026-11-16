@@ -1,4 +1,4 @@
-"""P1-T05, T28, T29: golden dataset format, runner and report. Frozen mode only (no network, no cost)."""
+"""P1-T05, T28, T29: golden dataset format, runner and report. Frozen mode only (no network)."""
 from __future__ import annotations
 
 import copy
@@ -72,7 +72,7 @@ def test_report_contains_required_metrics_and_gates(ds, results):
     m = rep["metrics"]
     assert m["tool_selection"]["applicable"] == 30 and m["tool_selection"]["accuracy"] >= 0.9
     assert m["argument_correctness"]["applicable"] == sum(1 for c in ds.cases if c.expected.tool_calls)
-    assert {"n", "p50", "p95"} <= set(m["latency_ms"]) and {"n", "p50", "p95"} <= set(m["cost_inr"])
+    assert {"n", "p50", "p95"} <= set(m["latency_ms"]) and {"n", "p50", "p95"} <= set(m["tokens"])
     pending = sum(1 for c in ds.cases if c.review.status == PENDING)
     gate = rep["gates"]["human_review_complete"]
     assert gate["pending"] == pending and gate["pass"] is (pending == 0)  # never claims review that did not happen
@@ -153,7 +153,7 @@ def test_live_gate_fails_when_the_run_was_cut_short(ds):
     rs = run_frozen(ds.cases[:3])
     rs = [CaseResult(**{**r.to_dict(), "mode": "live"}) for r in rs]
     rs.append(CaseResult(id="x", category="tool_selection", review_status=PENDING, mode="live", executed=False,
-                         skipped_reason="run stopped: budget cap reached before this case"))
+                         skipped_reason="run stopped: provider error before this case"))
     rep = build_report(ds, DS_PATH, rs, "live", REPO_ROOT)
     assert rep["gates"]["tool_selection_at_least_90pct"]["pass"] is False  # even though executed cases are 100%
 
@@ -162,4 +162,4 @@ def test_usage_is_attached_per_request_not_borrowed_from_the_previous_one(ds):
     ok = run_frozen_case(_case(ds, "tool-01"))
     rejected = run_frozen_case(_case(ds, "fail-01"))  # 422: no model call, no usage record
     assert ok.latency_ms is not None
-    assert rejected.latency_ms is None and rejected.cost_inr is None
+    assert rejected.latency_ms is None and rejected.total_tokens is None

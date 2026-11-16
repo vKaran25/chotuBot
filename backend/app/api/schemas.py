@@ -21,10 +21,9 @@ class CreateSessionRequest(BaseModel):
 class SettingsUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     model: str | None = Field(default=None, min_length=1, max_length=100)
-    monthly_budget_inr: float | None = Field(default=None, ge=0, le=1_000_000)
 
     @model_validator(mode="after")
     def _not_empty(self) -> "SettingsUpdate":
-        if self.model is None and self.monthly_budget_inr is None:
-            raise ValueError("provide at least one of: model, monthly_budget_inr")
+        if self.model is None:
+            raise ValueError("provide: model")
         return self

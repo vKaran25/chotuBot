@@ -118,3 +118,24 @@ th, td { text-align: left; padding: 0.3rem 0.4rem; border-bottom: 1px solid var(
   .composer { padding: 0.6rem 0.75rem 0.8rem; }
 }
 @media (prefers-reduced-motion: reduce) { .sidebar { transition: none; } }
+
+/* chat rows with a three-dots menu */
+.session-row { position: relative; display: flex; align-items: center; border-radius: 8px; }
+.session-row:hover, .session-row:focus-within { background: var(--bg); }
+.session-row.active { background: var(--user-bg); }
+.session-row .session, .session-row .session.active { flex: 1; min-width: 0; border-color: transparent; background: transparent; }
+.dots-wrap { position: relative; flex: none; }
+.dots { border: none; background: transparent; padding: 0; width: 36px; min-height: 36px; font-size: 1.25rem; line-height: 1; opacity: 0; }
+.session-row:hover .dots, .session-row:focus-within .dots, .dots[aria-expanded="true"] { opacity: 1; }
+@media (hover: none) { .dots { opacity: 0.7; } }
+.menu-pop { position: absolute; right: 0; top: 100%; z-index: 10; min-width: 8rem; padding: 0.25rem; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18); }
+.menu-pop button { width: 100%; text-align: left; border: none; background: transparent; }
+.menu-pop button:hover { background: var(--bg); }
+.danger-text { color: var(--err); }
+.confirm { position: fixed; z-index: 40; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(26rem, calc(100vw - 2rem)); padding: 1.25rem; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; display: flex; flex-direction: column; gap: 0.75rem; }
+.confirm h2 { font-size: 1.05rem; }
+.confirm p { margin: 0; overflow-wrap: anywhere; }
+.confirm .error { margin: 0; }
+.confirm-actions { display: flex; justify-content: flex-end; gap: 0.6rem; }
+button.danger { background: var(--err); border-color: var(--err); color: var(--bg); }
+button.danger:hover:not(:disabled) { border-color: var(--err); filter: brightness(1.1); }
