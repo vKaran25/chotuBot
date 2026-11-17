@@ -46,8 +46,8 @@ CREATE TABLE IF NOT EXISTS app_settings (
 """
 
 
-def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+def now_iso(*, timespec: str = "seconds") -> str:
+    return datetime.now(timezone.utc).isoformat(timespec=timespec)
 
 
 def new_id() -> str:
@@ -90,8 +90,10 @@ class Storage:
 
     # ---- sessions -------------------------------------------------------
     def create_session(self, title: str = "New conversation") -> dict[str, Any]:
-        sid, ts = new_id(), now_iso()
+        sid = new_id()
         with self._conn() as c:
+            c.execute("BEGIN IMMEDIATE")
+            ts = now_iso(timespec="microseconds")
             c.execute("INSERT INTO sessions VALUES (?,?,?,?)", (sid, title, ts, ts))
         return {"id": sid, "title": title, "created_at": ts, "updated_at": ts, "message_count": 0}
 
@@ -163,8 +165,9 @@ class Storage:
         request_id: str,
     ) -> str:
         """Persist a user+assistant exchange atomically; creates the session when sid is None."""
-        ts = now_iso()
         with self._conn() as c:
+            c.execute("BEGIN IMMEDIATE")
+            ts = now_iso(timespec="microseconds")
             if sid is None:
                 sid = new_id()
                 c.execute("INSERT INTO sessions VALUES (?,?,?,?)", (sid, _title_from(user_text), ts, ts))

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ApiError, api } from "./api";
 import Composer from "./components/Composer";
 import MessageBody from "./components/MessageBody";
@@ -33,11 +33,19 @@ export default function App() {
   const loadToken = useRef(0); // ignores responses for a conversation the user already left
   const endRef = useRef<HTMLDivElement>(null);
   const settingsBtnRef = useRef<HTMLButtonElement>(null);
+  const restoreSettingsFocus = useRef(false);
 
   const closeSettings = useCallback(() => {
+    restoreSettingsFocus.current = true;
     setSettingsOpen(false);
-    settingsBtnRef.current?.focus(); // return focus to the trigger
   }, []);
+
+  useLayoutEffect(() => {
+    if (!settingsOpen && restoreSettingsFocus.current) {
+      restoreSettingsFocus.current = false;
+      settingsBtnRef.current?.focus();
+    }
+  }, [settingsOpen]);
 
   useEffect(() => {
     if (!sidebarOpen) return;

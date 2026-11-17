@@ -151,7 +151,7 @@ button.danger:hover:not(:disabled) { border-color: var(--err); filter: brightnes
 .md h1 { font-size: 1.15em; }
 .md h2 { font-size: 1.08em; }
 .md code { background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 0.05em 0.35em; }
-.md pre { max-height: none; }
+.md pre { max-height: none; white-space: pre; }
 .md pre code { background: none; border: none; padding: 0; }
 .md blockquote { border-left: 3px solid var(--border); padding-left: 0.8em; color: var(--muted); }
 .md a { color: var(--accent); }
