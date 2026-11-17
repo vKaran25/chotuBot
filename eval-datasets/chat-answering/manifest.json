@@ -1,0 +1,42 @@
+{
+  "behavior": "chat-answering",
+  "scope": "End-to-end correctness for chotuBot's documented sample projects and notes, including final-turn answers and specified read-only lookup activity. Excludes general model safety, browser and API contract regressions, and provider availability.",
+  "version": "0.2.0",
+  "created_at": "2026-11-18",
+  "corpus_or_source_snapshot": {
+    "file": "source-snapshot.json",
+    "upstream": "docs/specs/tools.md",
+    "upstream_sha256": "86677fcb3e057f9553be44e04a94837abbf67597fe9049e69d511373d2c7b0b9"
+  },
+  "rubric": {
+    "execution": "Use a fresh session per case. Send input.turns in order. Judge only the final reply and any final-turn tool_calls expectations, recording earlier errors separately.",
+    "answers": "Pass when the final reply conveys all required_facts, avoids must_not claims, and satisfies any pass_criteria. Equivalent wording and formatting are accepted.",
+    "tools": "When tool_calls is specified, match the specified calls by name, exact args, and status for the final turn. For search result_ids, compare the ordered IDs on tool_activity.result.results. Omitted tool_calls leaves the route open."
+  },
+  "counts": {
+    "candidate": 1,
+    "approved": 39,
+    "by_slice": {
+      "project_status": 14,
+      "note_search": 14,
+      "follow_up": 12
+    },
+    "by_source_type": {
+      "curated": 7,
+      "synthetic": 33
+    }
+  },
+  "known_gaps": [
+    "No production traces were used. Coverage reflects the sample fixture.",
+    "project-005 awaits review of whether to require a project status lookup.",
+    "No held-out split has been assigned. Assign it after approval, grouping related cases and paraphrases together.",
+    "The demo provider is useful for checking API plumbing. Answer quality and multi-turn behavior should be evaluated with the target model."
+  ],
+  "approved_reviewer_provenance": [
+    {
+      "reviewed_by": "vKaran25",
+      "reviewed_at": "2026-11-18",
+      "approved_count": 39
+    }
+  ]
+}
