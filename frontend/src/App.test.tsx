@@ -5,7 +5,11 @@ import App from "./App";
 
 const SETTINGS = {
   provider: "nim", key_configured: true, key_env_var: "NVIDIA_API_KEY", model: "m/a",
-  models: [{ id: "m/a", label: "A" }, { id: "m/b", label: "B" }],
+  models: [
+    { id: "m/a", label: "A", category: "fast" },
+    { id: "m/b", label: "B", category: "thinking" },
+    { id: "m/c", label: "C", category: "flagship" },
+  ],
   tracing_enabled: false,
 };
 const USAGE = { totals: { requests: 3, total_tokens: 1200, avg_latency_ms: 800 }, records: [] };
@@ -30,6 +34,18 @@ const base: Handler = (url) => {
 beforeEach(() => vi.unstubAllGlobals());
 
 describe("App", () => {
+  it("groups selectable models into Fast, Thinking, and Flagship", async () => {
+    mockFetch(base);
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    const dialog = await screen.findByRole("dialog");
+    for (const [category, id] of [["Fast", "m/a"], ["Thinking", "m/b"], ["Flagship", "m/c"]]) {
+      const group = within(dialog).getByRole("group", { name: category });
+      expect(within(group).getByRole("option")).toHaveValue(id);
+    }
+  });
+
   it("renders sidebar and chat area", async () => {
     mockFetch(base);
     render(<App />);
