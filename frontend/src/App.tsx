@@ -6,7 +6,18 @@ import ConfirmDialog from "./components/ConfirmDialog";
 import SettingsPanel from "./components/SettingsPanel";
 import Sidebar from "./components/Sidebar";
 import ToolActivityList from "./components/ToolActivityList";
-import type { AppSettings, ChatMessage, SessionSummary, UsageSummary } from "./types";
+import CitationList from "./components/CitationList";
+import DocumentsPanel from "./components/DocumentsPanel";
+import type { AppSettings, ChatMessage, Citation, SessionSummary, UsageSummary, WorkspaceList } from "./types";
+
+const WS_KEY = "chotu.workspace";
+const readWs = () => {
+  try {
+    return localStorage.getItem(WS_KEY) ?? "default";
+  } catch {
+    return "default";
+  }
+};
 
 interface UiError {
   code: string;
@@ -30,6 +41,12 @@ export default function App() {
   const [pendingDelete, setPendingDelete] = useState<SessionSummary | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // Phase 2: documents. Every Phase 2 fetch fails silently so Phase 1 chat is never disturbed by it.
+  const [workspaces, setWorkspaces] = useState<WorkspaceList | null>(null);
+  const [workspaceId, setWorkspaceIdState] = useState<string>(readWs);
+  const [useDocs, setUseDocs] = useState(false);
+  const [docsOpen, setDocsOpen] = useState(false);
+  const [citations, setCitations] = useState<Record<string, Citation[]>>({});
   const loadToken = useRef(0); // ignores responses for a conversation the user already left
   const endRef = useRef<HTMLDivElement>(null);
   const settingsBtnRef = useRef<HTMLButtonElement>(null);
@@ -68,10 +85,42 @@ export default function App() {
     if (u.status === "fulfilled") setUsage(u.value);
   }, []);
 
+  const refreshWorkspaces = useCallback(async () => {
+    try {
+      const list = await api.listWorkspaces();
+      if (!Array.isArray(list?.workspaces)) return; // older backend or unexpected reply: hide document features
+      setWorkspaces(list);
+      setWorkspaceIdState((cur) => (list.workspaces.some((w) => w.id === cur) ? cur : "default"));
+    } catch {
+      /* documents are optional; chat keeps working */
+    }
+  }, []);
+
+  const setWorkspaceId = (id: string) => {
+    setWorkspaceIdState(id);
+    try {
+      localStorage.setItem(WS_KEY, id);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const loadCitations = async (sessionId: string, token: number) => {
+    try {
+      const map = await api.sessionCitations(sessionId);
+      if (map && typeof map === "object" && token === loadToken.current) setCitations((c) => ({ ...c, ...map }));
+    } catch {
+      /* citations are optional */
+    }
+  };
+
   useEffect(() => {
     void refreshSessions();
     void refreshSettingsAndUsage();
-  }, [refreshSessions, refreshSettingsAndUsage]);
+    void refreshWorkspaces();
+  }, [refreshSessions, refreshSettingsAndUsage, refreshWorkspaces]);
+
+  const activeWorkspace = workspaces?.workspaces.find((w) => w.id === workspaceId);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });
@@ -86,6 +135,7 @@ export default function App() {
       if (token !== loadToken.current) return;
       setActiveId(id);
       setMessages(detail.messages);
+      void loadCitations(id, token);
     } catch (e) {
       if (token === loadToken.current) setError(toUiError(e));
     }
@@ -110,7 +160,7 @@ export default function App() {
     setInput("");
     let res;
     try {
-      res = await api.chat(text, sentIn);
+      res = useDocs ? await api.chat(text, sentIn, { workspaceId }) : await api.chat(text, sentIn);
     } catch (e) {
       setPending(false);
       void refreshSettingsAndUsage();
@@ -126,6 +176,8 @@ export default function App() {
     setPending(false);
     void refreshSettingsAndUsage();
     void refreshSessions();
+    const cited = res.citations;
+    if (cited?.length) setCitations((c) => ({ ...c, [res.request_id]: cited }));
     if (token !== loadToken.current) return; // user switched conversations meanwhile; it is saved and listed
     setActiveId(res.session_id);
     try {
@@ -178,10 +230,22 @@ export default function App() {
     }
   };
 
+  const allowSharing = async () => {
+    try {
+      await api.setConsent(workspaceId, true);
+      setError(null);
+      void refreshWorkspaces();
+    } catch (e) {
+      setError(toUiError(e));
+    }
+  };
+
+  const overlay = settingsOpen || pendingDelete !== null || docsOpen;
+
   return (
     <div className="app">
       <Sidebar
-        inert={settingsOpen || pendingDelete !== null}
+        inert={overlay}
         sessions={sessions}
         activeId={activeId}
         open={sidebarOpen}
@@ -193,12 +257,21 @@ export default function App() {
           setPendingDelete(s);
         }}
       />
-      <main className="chat" inert={settingsOpen || pendingDelete !== null}>
+      <main className="chat" inert={overlay}>
         <header className="chat-head">
           <button type="button" className="menu" onClick={() => setSidebarOpen(true)} aria-label="Open conversations">
             ☰
           </button>
           <span className="chat-title">{sessions.find((s) => s.id === activeId)?.title ?? "New conversation"}</span>
+          <button
+            type="button"
+            onClick={() => {
+              setDocsOpen(true);
+              void refreshWorkspaces();
+            }}
+          >
+            Documents
+          </button>
           <button
             type="button"
             ref={settingsBtnRef}
@@ -225,6 +298,9 @@ export default function App() {
             <article key={m.id} className={`msg ${m.role}`}>
               <h2 className="sr-only">{m.role === "user" ? "You" : "Assistant"}</h2>
               {m.role === "assistant" ? <MessageBody text={m.content} /> : <p className="msg-text">{m.content}</p>}
+              {m.role === "assistant" && m.request_id && Array.isArray(citations[m.request_id]) && (
+                <CitationList citations={citations[m.request_id]} />
+              )}
               <ToolActivityList activity={m.tool_activity} />
             </article>
           ))}
@@ -239,10 +315,26 @@ export default function App() {
         {error && (
           <p className="error" role="alert">
             {error.message} <span className="muted">({error.code})</span>
+            {error.code === "document_consent_required" && (
+              <>
+                {" "}
+                <button type="button" onClick={() => void allowSharing()}>
+                  Allow sharing for this workspace
+                </button>
+              </>
+            )}
           </p>
         )}
 
-        <Composer value={input} pending={pending} onChange={setInput} onSend={() => void send()} />
+        <Composer
+          value={input}
+          pending={pending}
+          onChange={setInput}
+          onSend={() => void send()}
+          useDocuments={useDocs}
+          onToggleDocuments={workspaces ? setUseDocs : undefined}
+          workspaceName={activeWorkspace?.name}
+        />
       </main>
 
       {pendingDelete && (
@@ -255,6 +347,20 @@ export default function App() {
           onConfirm={() => void confirmDelete()}
           onCancel={cancelDelete}
         />
+      )}
+
+      {docsOpen && (
+        <>
+          <div className="scrim show" onClick={() => setDocsOpen(false)} aria-hidden="true" />
+          <DocumentsPanel
+            workspaces={workspaces?.workspaces ?? []}
+            consentRequired={workspaces?.consent_required ?? true}
+            workspaceId={workspaceId}
+            onSelectWorkspace={setWorkspaceId}
+            onWorkspacesChanged={refreshWorkspaces}
+            onClose={() => setDocsOpen(false)}
+          />
+        </>
       )}
 
       {settingsOpen && (

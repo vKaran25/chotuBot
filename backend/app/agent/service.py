@@ -44,7 +44,10 @@ class ChatService:
             return self.settings.default_model
         return allowed[0] if allowed else self.settings.default_model
 
-    def chat(self, message: str, session_id: str | None) -> dict[str, Any]:
+    def chat(self, message: str, session_id: str | None, context: Any = None) -> dict[str, Any]:
+        """`context` (Phase 2, optional) adapts one turn: `model()` may supply an offline model, `model_input()`
+        rewrites only what the model sees for this message, `finalize()` post-processes the reply.
+        With `context=None` this is exactly the Phase 1 behavior."""
         if session_id is not None and not self.storage.session_exists(session_id):
             raise ChatError(404, "session_not_found", "No such conversation.")
         request_id = new_id()
@@ -58,11 +61,13 @@ class ChatService:
         usage: dict[str, Any] | None = None
         try:
             try:
-                model = self.model_factory(self.settings, model_id)
+                model = context.model(self.settings, model_id) if context is not None else None
+                if model is None:
+                    model = self.model_factory(self.settings, model_id)
                 history = self.storage.recent_messages(sid, self.settings.history_message_limit) if sid else []
                 graph = build_graph(model, self.registry, self.settings.max_tool_rounds, ai_log, activity)
                 msgs = [HumanMessage(m["content"]) if m["role"] == "user" else AIMessage(m["content"]) for m in history]
-                msgs.append(HumanMessage(message))
+                msgs.append(HumanMessage(context.model_input(message) if context is not None else message))
                 final = graph.invoke(
                     {"messages": msgs, "rounds": 0},
                     config={"callbacks": self.callbacks, "recursion_limit": 25},
@@ -71,6 +76,8 @@ class ChatService:
                 if getattr(last, "tool_calls", None):
                     raise AgentLoopLimit()
                 text = reply_text(last)[:MAX_REPLY_CHARS]
+                if context is not None:
+                    text = context.finalize(text)
                 sid = self.storage.save_exchange(sid, message, text, activity, request_id)
                 result = {"text": text}
             except MissingApiKey as e:

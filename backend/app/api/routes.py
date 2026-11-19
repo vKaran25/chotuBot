@@ -28,6 +28,8 @@ def health(request: Request) -> dict[str, Any]:
 
 @router.post("/chat")
 def chat(body: ChatRequest, request: Request) -> dict[str, Any]:
+    if body.use_documents:  # Phase 2 document question (docs/specs/document-chat.md)
+        return _svc(request).documents.chat(body.message, body.session_id, body.workspace_id)
     return _svc(request).chat.chat(body.message, body.session_id)
 
 

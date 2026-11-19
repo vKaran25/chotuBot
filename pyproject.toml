@@ -11,6 +11,12 @@ dependencies = [
     "langgraph>=1.0",
     "langchain-core>=1.0",
     "langchain-nvidia-ai-endpoints",
+    # Phase 2 document RAG (owner-approved 2026-11-18; versions verified on Windows + Python 3.13)
+    "fastembed>=0.9.1,<0.10",
+    "faiss-cpu>=1.16.0,<2",
+    "pypdf>=7.1.0,<8",
+    "python-multipart>=0.0.34",
+    "numpy>=2",
 ]
 
 [project.optional-dependencies]

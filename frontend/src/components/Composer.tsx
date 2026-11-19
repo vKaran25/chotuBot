@@ -7,9 +7,13 @@ interface Props {
   pending: boolean;
   onChange: (v: string) => void;
   onSend: () => void;
+  /** Phase 2: per-message "Use my documents" switch; hidden when not provided. */
+  useDocuments?: boolean;
+  onToggleDocuments?: (on: boolean) => void;
+  workspaceName?: string;
 }
 
-export default function Composer({ value, pending, onChange, onSend }: Props) {
+export default function Composer({ value, pending, onChange, onSend, useDocuments, onToggleDocuments, workspaceName }: Props) {
   const id = useId();
   const canSend = value.trim().length > 0 && !pending;
   return (
@@ -20,6 +24,15 @@ export default function Composer({ value, pending, onChange, onSend }: Props) {
         if (canSend) onSend();
       }}
     >
+      {onToggleDocuments && (
+        <div className="doc-toggle">
+          <label className="check">
+            <input type="checkbox" checked={!!useDocuments} onChange={(e) => onToggleDocuments(e.target.checked)} />
+            Use my documents
+          </label>
+          {useDocuments && workspaceName && <span className="muted">Workspace: {workspaceName}</span>}
+        </div>
+      )}
       <label htmlFor={id} className="sr-only">
         Message
       </label>
@@ -29,7 +42,7 @@ export default function Composer({ value, pending, onChange, onSend }: Props) {
         rows={2}
         maxLength={MAX_CHARS}
         value={value}
-        placeholder="Ask about sample project status or notes…"
+        placeholder={useDocuments ? "Ask a question about your documents…" : "Ask about sample project status or notes…"}
         autoComplete="off"
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => {
