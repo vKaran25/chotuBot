@@ -1,18 +1,22 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useId, useRef } from "react";
 
 export const MAX_CHARS = 4000;
+
+export interface AttachedFile {
+  key: string;
+  name: string;
+  uploading?: boolean;
+}
 
 interface Props {
   value: string;
   pending: boolean;
   onChange: (v: string) => void;
   onSend: () => void;
-  /** Phase 2: document controls live behind the + button; hidden when not provided. */
-  useDocuments?: boolean;
-  onToggleDocuments?: (on: boolean) => void;
-  workspaceName?: string;
-  onAddFile?: (file: File) => void;
-  onManageDocuments?: () => void;
+  /** Phase 2: files attached to this chat. The + button is hidden when `onAddFiles` is not provided. */
+  files?: AttachedFile[];
+  onAddFiles?: (files: File[]) => void;
+  onRemoveFile?: (key: string) => void;
 }
 
 const PlusIcon = () => (
@@ -25,123 +29,46 @@ const ArrowIcon = () => (
     <path d="M10 15V5M5.5 9.5 10 5l4.5 4.5" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" fill="none" />
   </svg>
 );
-const CheckIcon = () => (
+const FileIcon = () => (
   <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
-    <path d="m5 10.5 3.2 3L15 6.5" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    <path d="M6 2.75h5.2L15 6.6v10.65H6z M11 2.75V7h4" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" fill="none" />
   </svg>
 );
 
-function DocumentsMenu(props: Required<Pick<Props, "onToggleDocuments" | "onAddFile" | "onManageDocuments">> & {
-  useDocuments: boolean;
-}) {
-  const { useDocuments, onToggleDocuments, onAddFile, onManageDocuments } = props;
-  const [open, setOpen] = useState(false);
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
-  const btnRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setOpen(false);
-        btnRef.current?.focus();
-      }
-    };
-    document.addEventListener("mousedown", onDown);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
-  return (
-    <div className="plus-wrap" ref={wrapRef}>
-      <button
-        type="button"
-        ref={btnRef}
-        className="icon-btn"
-        aria-label="Documents"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-      >
-        <PlusIcon />
-      </button>
-      {open && (
-        <div className="plus-menu" role="menu" aria-label="Documents">
-          <button
-            type="button"
-            role="menuitem"
-            autoFocus
-            onClick={() => {
-              setOpen(false);
-              fileRef.current?.click();
-            }}
-          >
-            Add a file
-            <span className="item-note">PDF, Markdown or text, up to 10 MB</span>
-          </button>
-          <button
-            type="button"
-            role="menuitemcheckbox"
-            aria-checked={useDocuments}
-            onClick={() => {
-              setOpen(false);
-              onToggleDocuments(!useDocuments);
-            }}
-          >
-            <span className="item-row">
-              Use my documents
-              <span className="item-check">{useDocuments && <CheckIcon />}</span>
-            </span>
-            <span className="item-note">Answer from your files, with sources</span>
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              setOpen(false);
-              onManageDocuments();
-            }}
-          >
-            Manage documents
-          </button>
-        </div>
-      )}
-      <input
-        ref={fileRef}
-        type="file"
-        accept=".pdf,.md,.txt"
-        hidden
-        aria-label="Add a file"
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          e.target.value = "";
-          if (f) onAddFile(f);
-        }}
-      />
-    </div>
-  );
-}
-
-export default function Composer(p: Props) {
-  const { value, pending, onChange, onSend, useDocuments, onToggleDocuments, workspaceName, onAddFile, onManageDocuments } = p;
+export default function Composer({ value, pending, onChange, onSend, files = [], onAddFiles, onRemoveFile }: Props) {
   const id = useId();
-  const canSend = value.trim().length > 0 && !pending;
-  const docsAvailable = !!(onToggleDocuments && onAddFile && onManageDocuments);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const uploading = files.some((f) => f.uploading);
+  const canSend = value.trim().length > 0 && !pending && !uploading;
   return (
     <form
-      className={`composer${useDocuments ? " docs-on" : ""}`}
+      className="composer"
       onSubmit={(e) => {
         e.preventDefault();
         if (canSend) onSend();
       }}
     >
+      {files.length > 0 && (
+        <ul className="attachments" aria-label="Attached files">
+          {files.map((f) => (
+            <li key={f.key} className={`attachment${f.uploading ? " is-uploading" : ""}`}>
+              <FileIcon />
+              <span className="attachment-name" title={f.name}>
+                {f.name}
+              </span>
+              {f.uploading ? (
+                <span className="attachment-state">Adding…</span>
+              ) : (
+                onRemoveFile && (
+                  <button type="button" className="chip-x" aria-label={`Remove ${f.name}`} onClick={() => onRemoveFile(f.key)}>
+                    ×
+                  </button>
+                )
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
       <label htmlFor={id} className="sr-only">
         Message
       </label>
@@ -151,7 +78,7 @@ export default function Composer(p: Props) {
         rows={1}
         maxLength={MAX_CHARS}
         value={value}
-        placeholder={useDocuments ? "Ask about your documents" : "Message chotuBot"}
+        placeholder={files.length > 0 ? "Ask about your files" : "Message chotuBot"}
         autoComplete="off"
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => {
@@ -162,21 +89,31 @@ export default function Composer(p: Props) {
         }}
       />
       <div className="composer-bar">
-        {docsAvailable && (
-          <DocumentsMenu
-            useDocuments={!!useDocuments}
-            onToggleDocuments={onToggleDocuments!}
-            onAddFile={onAddFile!}
-            onManageDocuments={onManageDocuments!}
-          />
-        )}
-        {useDocuments && onToggleDocuments && (
-          <span className="doc-chip">
-            {workspaceName ? `Documents: ${workspaceName}` : "Documents"}
-            <button type="button" className="chip-x" aria-label="Stop using documents" onClick={() => onToggleDocuments(false)}>
-              ×
+        {onAddFiles && (
+          <>
+            <button
+              type="button"
+              className="icon-btn"
+              aria-label="Add files"
+              title="Add files (PDF, Markdown or text, up to 10 MB)"
+              onClick={() => fileRef.current?.click()}
+            >
+              <PlusIcon />
             </button>
-          </span>
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".pdf,.md,.txt"
+              multiple
+              hidden
+              aria-label="Choose files"
+              onChange={(e) => {
+                const chosen = Array.from(e.target.files ?? []);
+                e.target.value = "";
+                if (chosen.length) onAddFiles(chosen);
+              }}
+            />
+          </>
         )}
         <button type="submit" className="send" disabled={!canSend} aria-label={pending ? "Sending…" : "Send"}>
           <ArrowIcon />

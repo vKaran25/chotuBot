@@ -1,23 +1,13 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ApiError, api } from "./api";
-import Composer from "./components/Composer";
+import Composer, { type AttachedFile } from "./components/Composer";
 import MessageBody from "./components/MessageBody";
 import ConfirmDialog from "./components/ConfirmDialog";
 import SettingsPanel from "./components/SettingsPanel";
 import Sidebar from "./components/Sidebar";
 import ToolActivityList from "./components/ToolActivityList";
 import CitationList from "./components/CitationList";
-import DocumentsPanel from "./components/DocumentsPanel";
-import type { AppSettings, ChatMessage, Citation, SessionSummary, UsageSummary, WorkspaceList } from "./types";
-
-const WS_KEY = "chotu.workspace";
-const readWs = () => {
-  try {
-    return localStorage.getItem(WS_KEY) ?? "default";
-  } catch {
-    return "default";
-  }
-};
+import type { AppSettings, ChatMessage, Citation, SessionSummary, UsageSummary, Workspace } from "./types";
 
 interface UiError {
   code: string;
@@ -26,6 +16,15 @@ interface UiError {
 
 const toUiError = (e: unknown): UiError =>
   e instanceof ApiError ? { code: e.code, message: e.message } : { code: "unknown", message: "Something went wrong." };
+
+// Phase 2: files belong to one chat. Each chat with files uses its own workspace (docs/specs/document-chat.md, Web UI).
+const chatWorkspaceName = (sessionId: string) => `chat:${sessionId}`;
+
+async function findChatWorkspace(sessionId: string): Promise<Workspace | null> {
+  const list = await api.listWorkspaces();
+  if (!Array.isArray(list?.workspaces)) return null;
+  return list.workspaces.find((w) => w.name === chatWorkspaceName(sessionId)) ?? null;
+}
 
 export default function App() {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -41,14 +40,15 @@ export default function App() {
   const [pendingDelete, setPendingDelete] = useState<SessionSummary | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [streamText, setStreamText] = useState("");
   // Phase 2: documents. Every Phase 2 fetch fails silently so Phase 1 chat is never disturbed by it.
-  const [workspaces, setWorkspaces] = useState<WorkspaceList | null>(null);
-  const [workspaceId, setWorkspaceIdState] = useState<string>(readWs);
-  const [useDocs, setUseDocs] = useState(false);
-  const [docsOpen, setDocsOpen] = useState(false);
+  const [docsAvailable, setDocsAvailable] = useState(false);
+  const [chatWs, setChatWs] = useState<string | null>(null);
+  const [files, setFiles] = useState<AttachedFile[]>([]);
+  const [fileError, setFileError] = useState<string | null>(null);
   const [citations, setCitations] = useState<Record<string, Citation[]>>({});
-  const [docNotice, setDocNotice] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const loadToken = useRef(0); // ignores responses for a conversation the user already left
+  const shownChat = useRef<string | null>(null); // chat whose files are on screen
   const endRef = useRef<HTMLDivElement>(null);
   const settingsBtnRef = useRef<HTMLButtonElement>(null);
   const restoreSettingsFocus = useRef(false);
@@ -86,25 +86,14 @@ export default function App() {
     if (u.status === "fulfilled") setUsage(u.value);
   }, []);
 
-  const refreshWorkspaces = useCallback(async () => {
+  const checkDocuments = useCallback(async () => {
     try {
       const list = await api.listWorkspaces();
-      if (!Array.isArray(list?.workspaces)) return; // older backend or unexpected reply: hide document features
-      setWorkspaces(list);
-      setWorkspaceIdState((cur) => (list.workspaces.some((w) => w.id === cur) ? cur : "default"));
+      setDocsAvailable(Array.isArray(list?.workspaces)); // older backend or unexpected reply: no + button
     } catch {
       /* documents are optional; chat keeps working */
     }
   }, []);
-
-  const setWorkspaceId = (id: string) => {
-    setWorkspaceIdState(id);
-    try {
-      localStorage.setItem(WS_KEY, id);
-    } catch {
-      /* ignore */
-    }
-  };
 
   const loadCitations = async (sessionId: string, token: number) => {
     try {
@@ -115,17 +104,33 @@ export default function App() {
     }
   };
 
+  const loadChatFiles = async (sessionId: string, token: number) => {
+    try {
+      const ws = await findChatWorkspace(sessionId);
+      const docs = ws ? await api.listDocuments(ws.id) : [];
+      if (token !== loadToken.current) return;
+      setChatWs(ws?.id ?? null);
+      setFiles(docs.map((d) => ({ key: d.id, name: d.filename })));
+    } catch {
+      /* files are optional */
+    }
+  };
+
   useEffect(() => {
     void refreshSessions();
     void refreshSettingsAndUsage();
-    void refreshWorkspaces();
-  }, [refreshSessions, refreshSettingsAndUsage, refreshWorkspaces]);
-
-  const activeWorkspace = workspaces?.workspaces.find((w) => w.id === workspaceId);
+    void checkDocuments();
+  }, [refreshSessions, refreshSettingsAndUsage, checkDocuments]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });
-  }, [messages, pending]);
+  }, [messages, pending, streamText]);
+
+  const clearChatFiles = () => {
+    setChatWs(null);
+    setFiles([]);
+    setFileError(null);
+  };
 
   const selectSession = async (id: string) => {
     const token = ++loadToken.current;
@@ -136,7 +141,10 @@ export default function App() {
       if (token !== loadToken.current) return;
       setActiveId(id);
       setMessages(detail.messages);
+      shownChat.current = id;
+      clearChatFiles();
       void loadCitations(id, token);
+      void loadChatFiles(id, token);
     } catch (e) {
       if (token === loadToken.current) setError(toUiError(e));
     }
@@ -148,6 +156,8 @@ export default function App() {
     setMessages([]);
     setError(null);
     setSidebarOpen(false);
+    shownChat.current = null;
+    clearChatFiles();
   };
 
   const send = async () => {
@@ -155,15 +165,23 @@ export default function App() {
     if (!text || pending) return;
     const token = ++loadToken.current;
     const sentIn = activeId;
+    // A chat with files answers from them; a chat without files is plain Phase 1 chat.
+    const documents = chatWs && files.some((f) => !f.uploading) ? { workspaceId: chatWs } : undefined;
     setError(null);
     setPending(true);
+    setStreamText("");
     setMessages((m) => [...m, { id: `local-${Date.now()}`, role: "user", content: text, tool_activity: [] }]);
     setInput("");
     let res;
+    let streamed = false;
     try {
-      res = useDocs ? await api.chat(text, sentIn, { workspaceId }) : await api.chat(text, sentIn);
+      res = await api.chat(text, sentIn, documents, (soFar) => {
+        streamed = streamed || soFar.length > 0;
+        if (token === loadToken.current) setStreamText(soFar);
+      });
     } catch (e) {
       setPending(false);
+      setStreamText("");
       void refreshSettingsAndUsage();
       if (token !== loadToken.current) return;
       // Failed requests are not saved server-side, so roll back the optimistic message and restore the
@@ -175,12 +193,20 @@ export default function App() {
     }
     // The exchange is saved now. A failure below must never roll it back or invite a duplicate resend.
     setPending(false);
+    setStreamText("");
     void refreshSettingsAndUsage();
     void refreshSessions();
     const cited = res.citations;
     if (cited?.length) setCitations((c) => ({ ...c, [res.request_id]: cited }));
     if (token !== loadToken.current) return; // user switched conversations meanwhile; it is saved and listed
+    if (streamed) {
+      // Keep the streamed answer on screen (as the final, cleaned-up text) until the saved chat reloads.
+      const final = res;
+      setMessages((m) => [...m, { id: `local-a-${Date.now()}`, role: "assistant", content: final.message.content,
+                                   tool_activity: final.tool_activity, request_id: final.request_id }]);
+    }
     setActiveId(res.session_id);
+    shownChat.current = res.session_id;
     try {
       const detail = await api.getSession(res.session_id);
       if (token === loadToken.current) setMessages(detail.messages);
@@ -189,6 +215,71 @@ export default function App() {
         const u = toUiError(e);
         setError({ code: u.code, message: `Your message was sent and saved, but reloading it failed: ${u.message} Reopen it from the sidebar.` });
       }
+    }
+  };
+
+  // + button: add files to this chat (creating the chat first if it is new). Adding a file is the owner's consent
+  // to share this chat's matching excerpts with the model (owner decision 2026-11-19).
+  const addFiles = async (chosen: File[]) => {
+    setFileError(null);
+    let sid = activeId;
+    let ws = chatWs;
+    try {
+      if (!sid) {
+        sid = (await api.createSession()).id;
+        loadToken.current++;
+        setActiveId(sid);
+        shownChat.current = sid;
+        void refreshSessions();
+      }
+      if (!ws) {
+        ws = (await findChatWorkspace(sid))?.id ?? (await api.createWorkspace(chatWorkspaceName(sid))).id;
+        await api.setConsent(ws, true);
+        if (shownChat.current === sid) setChatWs(ws);
+      }
+    } catch (e) {
+      setFileError(toUiError(e).message);
+      return;
+    }
+    for (const [i, file] of chosen.entries()) {
+      const key = `adding-${Date.now()}-${i}`;
+      const here = () => shownChat.current === sid;
+      if (here()) setFiles((f) => [...f, { key, name: file.name, uploading: true }]);
+      try {
+        const d = await api.uploadDocument(ws, file);
+        if (here()) setFiles((f) => f.map((x) => (x.key === key ? { key: d.id, name: d.filename } : x)));
+      } catch (e) {
+        if (here()) {
+          setFiles((f) => f.filter((x) => x.key !== key));
+          setFileError(`${file.name}: ${toUiError(e).message}`);
+        }
+      }
+    }
+  };
+
+  const removeFile = async (key: string) => {
+    if (!chatWs) return;
+    setFileError(null);
+    try {
+      await api.deleteDocument(chatWs, key);
+    } catch (e) {
+      if (!(e instanceof ApiError && e.status === 404)) {
+        setFileError(toUiError(e).message);
+        return;
+      }
+    }
+    setFiles((f) => f.filter((x) => x.key !== key));
+  };
+
+  // Deleting a chat also deletes the files added to it.
+  const deleteChatFiles = async (sessionId: string) => {
+    try {
+      const ws = sessionId === activeId && chatWs ? chatWs : (await findChatWorkspace(sessionId))?.id;
+      if (!ws) return;
+      const docs = await api.listDocuments(ws);
+      await Promise.all(docs.map((d) => api.deleteDocument(ws, d.id).catch(() => undefined)));
+    } catch {
+      /* best effort */
     }
   };
 
@@ -207,6 +298,7 @@ export default function App() {
         return;
       }
     }
+    if (docsAvailable) await deleteChatFiles(target.id);
     if (target.id === activeId) newChat();
     setSessions((list) => list.filter((s) => s.id !== target.id));
     setPendingDelete(null);
@@ -231,35 +323,7 @@ export default function App() {
     }
   };
 
-  const allowSharing = async () => {
-    try {
-      await api.setConsent(workspaceId, true);
-      setError(null);
-      void refreshWorkspaces();
-    } catch (e) {
-      setError(toUiError(e));
-    }
-  };
-
-  // Same upload API as the Documents panel; adds the file to the selected workspace.
-  const addFile = async (file: File) => {
-    setDocNotice({ kind: "ok", text: `Adding ${file.name}…` });
-    try {
-      const d = await api.uploadDocument(workspaceId, file);
-      setDocNotice({ kind: "ok", text: `Added ${d.filename} to ${activeWorkspace?.name ?? "your documents"}.` });
-      void refreshWorkspaces();
-    } catch (e) {
-      setDocNotice({ kind: "error", text: toUiError(e).message });
-    }
-  };
-
-  const openDocuments = () => {
-    setDocNotice(null);
-    setDocsOpen(true);
-    void refreshWorkspaces();
-  };
-
-  const overlay = settingsOpen || pendingDelete !== null || docsOpen;
+  const overlay = settingsOpen || pendingDelete !== null;
 
   return (
     <div className="app">
@@ -303,62 +367,58 @@ export default function App() {
 
         <div className="messages" role="log" aria-live="polite" aria-label="Conversation">
           <div className="thread">
-          {messages.length === 0 && !pending && (
-            <div className="empty">
-              <p className="empty-title">How can I help?</p>
-              <p className="muted">Try “What is the status of atlas?” or “Search my notes for budget”.</p>
-            </div>
-          )}
-          {messages.map((m) => (
-            <article key={m.id} className={`msg ${m.role}`}>
-              <h2 className="sr-only">{m.role === "user" ? "You" : "Assistant"}</h2>
-              {m.role === "assistant" ? <MessageBody text={m.content} /> : <p className="msg-text">{m.content}</p>}
-              {m.role === "assistant" && m.request_id && Array.isArray(citations[m.request_id]) && (
-                <CitationList citations={citations[m.request_id]} />
-              )}
-              <ToolActivityList activity={m.tool_activity} />
-            </article>
-          ))}
-          {pending && (
-            <p className="muted thinking" role="status">
-              Thinking…
-            </p>
-          )}
-          <div ref={endRef} />
+            {messages.length === 0 && !pending && (
+              <div className="empty">
+                <p className="empty-title">How can I help?</p>
+                <p className="muted">Try “What is the status of atlas?” or “Search my notes for budget”.</p>
+              </div>
+            )}
+            {messages.map((m) => (
+              <article key={m.id} className={`msg ${m.role}`}>
+                <h2 className="sr-only">{m.role === "user" ? "You" : "Assistant"}</h2>
+                {m.role === "assistant" ? <MessageBody text={m.content} /> : <p className="msg-text">{m.content}</p>}
+                {m.role === "assistant" && m.request_id && Array.isArray(citations[m.request_id]) && (
+                  <CitationList citations={citations[m.request_id]} />
+                )}
+                <ToolActivityList activity={m.tool_activity} />
+              </article>
+            ))}
+            {pending &&
+              (streamText ? (
+                <article className="msg assistant streaming" aria-busy="true">
+                  <h2 className="sr-only">Assistant</h2>
+                  <MessageBody text={streamText} />
+                </article>
+              ) : (
+                <p className="muted thinking" role="status">
+                  Thinking…
+                </p>
+              ))}
+            <div ref={endRef} />
           </div>
         </div>
 
         <div className="dock">
-        {docNotice && (
-          <p className={docNotice.kind === "error" ? "error" : "doc-notice"} role={docNotice.kind === "error" ? "alert" : "status"}>
-            {docNotice.text}
-          </p>
-        )}
-        {error && (
-          <p className="error" role="alert">
-            {error.message} <span className="muted">({error.code})</span>
-            {error.code === "document_consent_required" && (
-              <>
-                {" "}
-                <button type="button" onClick={() => void allowSharing()}>
-                  Allow sharing for this workspace
-                </button>
-              </>
-            )}
-          </p>
-        )}
+          {fileError && (
+            <p className="error" role="alert">
+              {fileError}
+            </p>
+          )}
+          {error && (
+            <p className="error" role="alert">
+              {error.message} <span className="muted">({error.code})</span>
+            </p>
+          )}
 
-        <Composer
-          value={input}
-          pending={pending}
-          onChange={setInput}
-          onSend={() => void send()}
-          useDocuments={useDocs}
-          onToggleDocuments={workspaces ? setUseDocs : undefined}
-          workspaceName={activeWorkspace?.name}
-          onAddFile={workspaces ? (f) => void addFile(f) : undefined}
-          onManageDocuments={workspaces ? openDocuments : undefined}
-        />
+          <Composer
+            value={input}
+            pending={pending}
+            onChange={setInput}
+            onSend={() => void send()}
+            files={files}
+            onAddFiles={docsAvailable ? (f) => void addFiles(f) : undefined}
+            onRemoveFile={(key) => void removeFile(key)}
+          />
         </div>
       </main>
 
@@ -372,20 +432,6 @@ export default function App() {
           onConfirm={() => void confirmDelete()}
           onCancel={cancelDelete}
         />
-      )}
-
-      {docsOpen && (
-        <>
-          <div className="scrim show" onClick={() => setDocsOpen(false)} aria-hidden="true" />
-          <DocumentsPanel
-            workspaces={workspaces?.workspaces ?? []}
-            consentRequired={workspaces?.consent_required ?? true}
-            workspaceId={workspaceId}
-            onSelectWorkspace={setWorkspaceId}
-            onWorkspacesChanged={refreshWorkspaces}
-            onClose={() => setDocsOpen(false)}
-          />
-        </>
       )}
 
       {settingsOpen && (
