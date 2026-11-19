@@ -86,7 +86,7 @@ code, pre { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; fon
 .notice { margin: 0 auto; width: min(46rem, calc(100% - 2rem)); padding: 0.6rem 0.9rem; background: var(--warn-bg); border-radius: 10px; font-size: 0.9rem; }
 
 /* ---- conversation ---- */
-.messages { flex: 1; overflow-y: auto; padding: 1rem; }
+.messages { position: relative; flex: 1; overflow-y: auto; overscroll-behavior-y: contain; padding: 1rem; }
 .thread { width: min(46rem, 100%); margin: 0 auto; display: flex; flex-direction: column; gap: 1.4rem; min-height: 100%; }
 .empty { margin: auto; text-align: center; padding-bottom: 8vh; }
 .empty-title { font-size: 1.6rem; font-weight: 500; letter-spacing: -0.02em; margin: 0 0 0.4rem; }
@@ -205,23 +205,20 @@ button.danger:hover:not(:disabled) { background: var(--err); filter: brightness(
 
 /* ---- attached files and sources ---- */
 .attachments { list-style: none; margin: 0 0 0.25rem -0.35rem; padding: 0; display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.composer .attachments { max-height: 25dvh; overflow-y: auto; margin-left: 0; }
+.msg .attachments { margin-left: 0; }
 .attachment {
   display: inline-flex; align-items: center; gap: 0.4rem; max-width: 100%; padding: 0.3rem 0.3rem 0.3rem 0.6rem;
   border: 1px solid var(--line); border-radius: 12px; background: var(--rail); font-size: 0.85rem; color: var(--ink);
 }
 .attachment svg { color: var(--accent); flex: none; }
-.attachment-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 16rem; }
+.attachment-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 16rem; }
 .attachment-state { color: var(--quiet); font-size: 0.8rem; padding-right: 0.35rem; }
 .attachment.is-uploading svg { color: var(--quiet); }
 .chip-x { border: none; background: transparent; color: var(--quiet); min-height: 24px; width: 24px; padding: 0; border-radius: 50%; font-size: 1rem; line-height: 1; }
 .chip-x:hover:not(:disabled) { background: var(--wash); color: var(--ink); }
-.panel-body .citations ol { list-style: none; margin: 0.7rem 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.35rem; }
-.cite {
-  font-size: 0.78rem; min-height: 28px; padding: 0.15rem 0.6rem; border-radius: 999px; border: 1px solid transparent;
-  background: var(--accent-wash); color: var(--accent); max-width: 100%; overflow-wrap: anywhere; text-align: left;
+.citations {
+  list-style: none; margin: 0.4rem 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.15rem 0.75rem;
+  color: var(--quiet); font-size: 0.8rem; overflow-wrap: anywhere;
 }
-.cite:hover:not(:disabled) { background: var(--accent-wash); border-color: var(--accent); }
-.cite-gone { background: var(--wash); color: var(--quiet); font-style: italic; }
-.cite-gone:hover:not(:disabled) { background: var(--wash); border-color: var(--line); }
-.excerpt { max-width: min(40rem, calc(100vw - 2rem)); }
-.excerpt-text { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 50vh; overflow-y: auto; padding: 0.75rem; border-radius: 10px; background: var(--rail); border: 1px solid var(--line); font-size: 0.93rem; }
+.citations li { min-width: 0; }

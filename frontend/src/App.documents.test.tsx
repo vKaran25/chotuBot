@@ -86,7 +86,8 @@ describe("App with files", () => {
     expect(calls.find((c) => c.url === "/api/chat")?.body).toEqual({
       message: "How long does the battery last?", session_id: SID, use_documents: true, workspace_id: WSID,
     });
-    expect(await screen.findByRole("list", { name: "Sources" })).toHaveTextContent("orion-handbook.pdf — page 1");
+    expect(await screen.findByRole("list", { name: "Sources" })).toHaveTextContent("orion-handbook.pdf");
+    expect(screen.getByText("It lasts 14 hours.")).toBeInTheDocument();
   });
 
   it("reopening a chat shows its files and sources; removing a file deletes it", async () => {

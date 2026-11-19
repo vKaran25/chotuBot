@@ -1,59 +1,49 @@
-import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import CitationList, { formatLocation } from "./CitationList";
+import { render, screen, within } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
+import MessageBody from "./MessageBody";
 import type { Citation } from "../types";
 
-const OK: Citation = {
-  id: "c".repeat(32), n: 1, workspace_id: "default", document_id: "d".repeat(32),
+const PDF: Citation = {
+  id: "citation-1", n: 1, workspace_id: "default", document_id: "handbook",
   filename: "orion-handbook.pdf", location: { page: 1 }, status: "ok",
 };
-const GONE: Citation = { ...OK, id: "e".repeat(32), n: 2, document_id: null, filename: null, location: null, status: "source_deleted" };
 
-beforeEach(() => vi.unstubAllGlobals());
+describe("Reply sources", () => {
+  it("shows each filename once even when multiple passages from it were cited", () => {
+    render(<MessageBody text="The battery lasts 14 hours [1] [2]." citations={[
+      PDF,
+      { ...PDF, id: "citation-2", n: 2, location: { page: 5 } },
+      { ...PDF, id: "citation-3", n: 3, filename: "field-notes.md" },
+    ]} />);
 
-describe("formatLocation", () => {
-  it("formats PDF pages, Markdown headings and line ranges", () => {
-    expect(formatLocation({ page: 3 })).toBe("page 3");
-    expect(formatLocation({ heading: "Notes > Ladakh", line_start: 5, line_end: 9 })).toBe("Notes > Ladakh · lines 5–9");
-    expect(formatLocation({ heading: null, line_start: 1, line_end: 1 })).toBe("line 1");
-    expect(formatLocation(null)).toBe("");
-  });
-});
-
-describe("CitationList", () => {
-  it("lists numbered sources and opens an excerpt with file name and location", async () => {
-    const fetchFn = vi.fn(async () =>
-      new Response(JSON.stringify({ ...OK, request_id: "r", session_id: "s", text: "Its main battery lasts 14 hours." })),
-    );
-    vi.stubGlobal("fetch", fetchFn);
-    const user = userEvent.setup();
-    render(<CitationList citations={[OK, GONE]} />);
-    const list = screen.getByRole("list", { name: "Sources" });
-    expect(list).toHaveTextContent("[1] orion-handbook.pdf — page 1");
-    expect(list).toHaveTextContent("[2] source deleted");
-    await user.click(screen.getByRole("button", { name: /\[1\] orion-handbook\.pdf/ }));
-    const dialog = await screen.findByRole("dialog", { name: "Source [1]" });
-    expect(dialog).toHaveTextContent("orion-handbook.pdf");
-    expect(dialog).toHaveTextContent("page 1");
-    expect(await screen.findByText("Its main battery lasts 14 hours.")).toBeInTheDocument();
-    expect(fetchFn).toHaveBeenCalledWith(`/api/citations/${OK.id}`, expect.anything());
-    await user.keyboard("{Escape}");
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByText("The battery lasts 14 hours.")).toBeInTheDocument();
+    const sources = screen.getByRole("list", { name: "Sources" });
+    expect(within(sources).getAllByRole("listitem").map((item) => item.textContent)).toEqual([
+      "orion-handbook.pdf", "field-notes.md",
+    ]);
+    expect(within(sources).queryByRole("button")).not.toBeInTheDocument();
   });
 
-  it("shows 'source deleted' for a citation whose document is gone", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () =>
-      new Response(JSON.stringify({ ...GONE, request_id: "r", session_id: "s", text: null })),
-    ));
-    const user = userEvent.setup();
-    render(<CitationList citations={[GONE]} />);
-    await user.click(screen.getByRole("button", { name: /source deleted/ }));
-    expect(await screen.findByText("This source was deleted.")).toBeInTheDocument();
+  it("preserves code, link labels, and numbers that do not identify a citation", () => {
+    render(<MessageBody text="Value `[1]`, link [[1]](https://example.com), and [9]. See the manual [1]." citations={[PDF]} />);
+
+    expect(screen.getByText("[1]", { selector: "code" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "[1]" })).toBeInTheDocument();
+    expect(screen.getByText(/\[9\]\. See the manual\./)).toBeInTheDocument();
   });
 
-  it("renders nothing without citations", () => {
-    const { container } = render(<CitationList citations={[]} />);
-    expect(container).toBeEmptyDOMElement();
+  it("omits the source list for ordinary replies and keeps their bracketed numbers", () => {
+    render(<MessageBody text="See item [1]." />);
+
+    expect(screen.getByText("See item [1].")).toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "Sources" })).not.toBeInTheDocument();
+  });
+
+  it("labels a deleted source in the same small source list", () => {
+    render(<MessageBody text="The battery lasts 14 hours [1]." citations={[
+      { ...PDF, status: "source_deleted", document_id: null, filename: null, location: null },
+    ]} />);
+
+    expect(screen.getByRole("list", { name: "Sources" })).toHaveTextContent("Source deleted");
   });
 });

@@ -21,6 +21,20 @@ from tests.helpers import make_client, text
 MODEL = "nvidia/nemotron-3.5-lightning-30b-a3b"
 
 
+def test_catalog_models_can_be_selected_and_survive_restart(settings):
+    demo = settings.model_copy(update={"provider": "demo"})
+    with TestClient(create_app(demo, callbacks=[]), base_url="http://localhost") as client:
+        models = client.get("/api/settings").json()["models"]
+        assert {m["category"] for m in models} == {"fast", "thinking", "flagship"}
+        assert len({m["id"] for m in models}) == len(models)
+        for model in models:
+            response = client.put("/api/settings", json={"model": model["id"]})
+            assert response.status_code == 200
+            assert response.json()["model"] == model["id"]
+    with TestClient(create_app(demo, callbacks=[]), base_url="http://localhost") as client:
+        assert client.get("/api/settings").json()["model"] == models[-1]["id"]
+
+
 def test_build_model_uses_configured_key_and_model(settings):
     m = build_chat_model(settings, MODEL)
     assert type(m).__name__ == "ChatNVIDIA" and m.model == MODEL

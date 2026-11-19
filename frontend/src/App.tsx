@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ApiError, api } from "./api";
-import Composer, { type AttachedFile } from "./components/Composer";
+import Composer, { AttachmentList, type AttachedFile } from "./components/Composer";
 import MessageBody from "./components/MessageBody";
 import ConfirmDialog from "./components/ConfirmDialog";
 import SettingsPanel from "./components/SettingsPanel";
 import Sidebar from "./components/Sidebar";
 import ToolActivityList from "./components/ToolActivityList";
-import CitationList from "./components/CitationList";
 import type { AppSettings, ChatMessage, Citation, SessionSummary, UsageSummary, Workspace } from "./types";
 
 interface UiError {
@@ -49,7 +48,7 @@ export default function App() {
   const [citations, setCitations] = useState<Record<string, Citation[]>>({});
   const loadToken = useRef(0); // ignores responses for a conversation the user already left
   const shownChat = useRef<string | null>(null); // chat whose files are on screen
-  const endRef = useRef<HTMLDivElement>(null);
+  const messagesRef = useRef<HTMLDivElement>(null);
   const settingsBtnRef = useRef<HTMLButtonElement>(null);
   const restoreSettingsFocus = useRef(false);
 
@@ -110,7 +109,7 @@ export default function App() {
       const docs = ws ? await api.listDocuments(ws.id) : [];
       if (token !== loadToken.current) return;
       setChatWs(ws?.id ?? null);
-      setFiles(docs.map((d) => ({ key: d.id, name: d.filename })));
+      setFiles(docs.map((d) => ({ key: d.id, name: d.filename, addedAt: d.created_at })));
     } catch {
       /* files are optional */
     }
@@ -123,8 +122,9 @@ export default function App() {
   }, [refreshSessions, refreshSettingsAndUsage, checkDocuments]);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ block: "end" });
-  }, [messages, pending, streamText]);
+    const log = messagesRef.current;
+    if (log) log.scrollTop = log.scrollHeight;
+  }, [messages, pending, streamText, files]);
 
   const clearChatFiles = () => {
     setChatWs(null);
@@ -170,7 +170,10 @@ export default function App() {
     setError(null);
     setPending(true);
     setStreamText("");
-    setMessages((m) => [...m, { id: `local-${Date.now()}`, role: "user", content: text, tool_activity: [] }]);
+    const sentAt = new Date();
+    setMessages((m) => [...m, {
+      id: `local-${sentAt.getTime()}`, role: "user", content: text, tool_activity: [], created_at: sentAt.toISOString(),
+    }]);
     setInput("");
     let res;
     let streamed = false;
@@ -247,7 +250,7 @@ export default function App() {
       if (here()) setFiles((f) => [...f, { key, name: file.name, uploading: true }]);
       try {
         const d = await api.uploadDocument(ws, file);
-        if (here()) setFiles((f) => f.map((x) => (x.key === key ? { key: d.id, name: d.filename } : x)));
+        if (here()) setFiles((f) => f.map((x) => (x.key === key ? { key: d.id, name: d.filename, addedAt: d.created_at } : x)));
       } catch (e) {
         if (here()) {
           setFiles((f) => f.filter((x) => x.key !== key));
@@ -324,6 +327,20 @@ export default function App() {
   };
 
   const overlay = settingsOpen || pendingDelete !== null;
+  const draftFiles: AttachedFile[] = [];
+  const messageFiles = new Map<ChatMessage["id"], AttachedFile[]>();
+  // A file belongs in the transcript with the first message sent after it was added.
+  for (const file of files) {
+    const addedAt = Date.parse(file.addedAt ?? "");
+    const message = messages.find((m) => m.role === "user" && Date.parse(m.created_at ?? "") >= addedAt);
+    if (!message) {
+      draftFiles.push(file);
+    } else {
+      const attachments = messageFiles.get(message.id);
+      if (attachments) attachments.push(file);
+      else messageFiles.set(message.id, [file]);
+    }
+  }
 
   return (
     <div className="app">
@@ -365,7 +382,7 @@ export default function App() {
           </p>
         )}
 
-        <div className="messages" role="log" aria-live="polite" aria-label="Conversation">
+        <div className="messages" ref={messagesRef} role="log" aria-live="polite" aria-label="Conversation">
           <div className="thread">
             {messages.length === 0 && !pending && (
               <div className="empty">
@@ -376,9 +393,11 @@ export default function App() {
             {messages.map((m) => (
               <article key={m.id} className={`msg ${m.role}`}>
                 <h2 className="sr-only">{m.role === "user" ? "You" : "Assistant"}</h2>
-                {m.role === "assistant" ? <MessageBody text={m.content} /> : <p className="msg-text">{m.content}</p>}
-                {m.role === "assistant" && m.request_id && Array.isArray(citations[m.request_id]) && (
-                  <CitationList citations={citations[m.request_id]} />
+                <AttachmentList files={messageFiles.get(m.id)} onRemoveFile={(key) => void removeFile(key)} />
+                {m.role === "assistant" ? (
+                  <MessageBody text={m.content} citations={m.request_id ? citations[m.request_id] : undefined} />
+                ) : (
+                  <p className="msg-text">{m.content}</p>
                 )}
                 <ToolActivityList activity={m.tool_activity} />
               </article>
@@ -394,7 +413,6 @@ export default function App() {
                   Thinking…
                 </p>
               ))}
-            <div ref={endRef} />
           </div>
         </div>
 
@@ -415,7 +433,7 @@ export default function App() {
             pending={pending}
             onChange={setInput}
             onSend={() => void send()}
-            files={files}
+            files={draftFiles}
             onAddFiles={docsAvailable ? (f) => void addFiles(f) : undefined}
             onRemoveFile={(key) => void removeFile(key)}
           />

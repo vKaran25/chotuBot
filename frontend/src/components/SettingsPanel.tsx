@@ -55,12 +55,17 @@ export default function SettingsPanel({ settings, usage, onClose, onSave }: Prop
             <h3>Model</h3>
             <select id="model" aria-label="Model" value={settings.model} onChange={(e) => void save({ model: e.target.value })}>
               {!settings.models.some((m) => m.id === settings.model) && <option value={settings.model}>{settings.model}</option>}
-              {settings.models.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.label} ({m.id})
-                </option>
+              {(["fast", "thinking", "flagship"] as const).map((category) => (
+                <optgroup key={category} label={category[0].toUpperCase() + category.slice(1)}>
+                  {settings.models.filter((m) => (m.category ?? "fast") === category).map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.label} ({m.id})
+                    </option>
+                  ))}
+                </optgroup>
               ))}
             </select>
+            <p className="muted">Free NVIDIA trial endpoints. Rate limits and availability vary by model and account.</p>
           </section>
 
           <section>

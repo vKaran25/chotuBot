@@ -18,6 +18,7 @@ class ModelInfo(BaseModel):
     id: str
     label: str
     tool_capable: bool = True
+    category: Literal["fast", "thinking", "flagship"] = "fast"
 
 
 class Settings(BaseSettings):

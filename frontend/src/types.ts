@@ -21,6 +21,7 @@ export interface ChatMessage {
   content: string;
   tool_activity: ToolActivity[];
   request_id?: string | null;
+  created_at?: string;
 }
 
 export interface SessionDetail extends SessionSummary {
@@ -47,6 +48,7 @@ export interface ChatResponse {
 export interface ModelOption {
   id: string;
   label: string;
+  category?: "fast" | "thinking" | "flagship";
 }
 
 export interface AppSettings {

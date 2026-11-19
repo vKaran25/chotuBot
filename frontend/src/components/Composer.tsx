@@ -5,6 +5,7 @@ export const MAX_CHARS = 4000;
 export interface AttachedFile {
   key: string;
   name: string;
+  addedAt?: string;
   uploading?: boolean;
 }
 
@@ -35,6 +36,31 @@ const FileIcon = () => (
   </svg>
 );
 
+export function AttachmentList({ files, onRemoveFile }: Pick<Props, "files" | "onRemoveFile">) {
+  if (!files?.length) return null;
+  return (
+    <ul className="attachments" aria-label="Attached files">
+      {files.map((f) => (
+        <li key={f.key} className={`attachment${f.uploading ? " is-uploading" : ""}`}>
+          <FileIcon />
+          <span className="attachment-name" title={f.name}>
+            {f.name}
+          </span>
+          {f.uploading ? (
+            <span className="attachment-state">Adding…</span>
+          ) : (
+            onRemoveFile && (
+              <button type="button" className="chip-x" aria-label={`Remove ${f.name}`} onClick={() => onRemoveFile(f.key)}>
+                ×
+              </button>
+            )
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export default function Composer({ value, pending, onChange, onSend, files = [], onAddFiles, onRemoveFile }: Props) {
   const id = useId();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -48,27 +74,7 @@ export default function Composer({ value, pending, onChange, onSend, files = [],
         if (canSend) onSend();
       }}
     >
-      {files.length > 0 && (
-        <ul className="attachments" aria-label="Attached files">
-          {files.map((f) => (
-            <li key={f.key} className={`attachment${f.uploading ? " is-uploading" : ""}`}>
-              <FileIcon />
-              <span className="attachment-name" title={f.name}>
-                {f.name}
-              </span>
-              {f.uploading ? (
-                <span className="attachment-state">Adding…</span>
-              ) : (
-                onRemoveFile && (
-                  <button type="button" className="chip-x" aria-label={`Remove ${f.name}`} onClick={() => onRemoveFile(f.key)}>
-                    ×
-                  </button>
-                )
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
+      <AttachmentList files={files} onRemoveFile={onRemoveFile} />
       <label htmlFor={id} className="sr-only">
         Message
       </label>

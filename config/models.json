@@ -1,15 +1,41 @@
 {
-  "_note": "Allowlist of NVIDIA NIM models the owner permits. Every model must support tool calling. Availability varies per account; remove any that return 404 or time out.",
+  "_note": "Catalog scanned and tested through chotuBot with the owner's resume PDF on 2026-11-20. Only models returning cited resume answers and passing a focused factual question are retained. Categories describe intended use, not benchmark rankings or reasoning-mode settings. NVIDIA controls free-trial rate limits and account availability; 40 RPM is not guaranteed. Results: tests/MODEL_CHECK.md",
   "models": [
     {
-      "id": "openai/gpt-oss-20b",
-      "label": "GPT-OSS 20B (NIM, timed out in testing)",
-      "tool_capable": true
+      "id": "nvidia/nemotron-3.5-lightning-30b-a3b",
+      "label": "Nemotron 3.5 Lightning 30B-A3B",
+      "tool_capable": true,
+      "category": "fast"
     },
     {
-      "id": "nvidia/nemotron-3.5-lightning-30b-a3b",
-      "label": "Nemotron 3.5 Lightning 30B-A3B (NIM, fast - default for NIM)",
-      "tool_capable": true
+      "id": "nvidia/nemotron-3.5-bolt-e4b",
+      "label": "Nemotron 3.5 Bolt E4B",
+      "tool_capable": true,
+      "category": "fast"
+    },
+    {
+      "id": "poolside/laguna-xs-2.1",
+      "label": "Laguna XS 2.1",
+      "tool_capable": true,
+      "category": "fast"
+    },
+    {
+      "id": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+      "label": "Nemotron 3.5 Super VL 120B-A12B (early access)",
+      "tool_capable": true,
+      "category": "thinking"
+    },
+    {
+      "id": "nvidia/nemotron-3-ultra-550b-a55b",
+      "label": "Nemotron 3 Ultra 550B-A55B",
+      "tool_capable": true,
+      "category": "flagship"
+    },
+    {
+      "id": "stepfun-ai/step-5-preview",
+      "label": "Step 5 Preview",
+      "tool_capable": true,
+      "category": "flagship"
     }
   ]
 }
