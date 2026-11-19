@@ -50,6 +50,13 @@ Once the server is running, open <http://127.0.0.1:8765>:
 - **Settings:** the **Settings** button (top right) shows whether your key is configured, lets you pick the model, and lists recent requests with tokens and latency.
 - **Stop the app:** press Ctrl+C in the terminal running `python -m app`. Your chats are kept for next time.
 
+### Ask questions about your own documents
+
+- **The + button** in the message box: **Add a file** uploads a text PDF, Markdown or TXT file (max 10 MB) to the current workspace; **Manage documents** lets you pick or create a workspace and reindex or delete files. Files are indexed locally with a small embedding model (`BAAI/bge-small-en-v1.5`, downloaded once, about 67 MB, into `data/models/`) and a FAISS index.
+- **Allow sharing:** with NVIDIA NIM, a document question sends the few matching excerpts to NVIDIA. That is off by default for each workspace; turn on **Allow sharing excerpts with the cloud model** in Manage documents (you can turn it off again). The offline demo provider needs no consent.
+- **Use my documents:** choose it from the + menu (a "Documents: …" chip appears; × turns it off). The answer cites its sources as `[1]`, `[2]`…; click a source to see the excerpt, file name and page/section/lines. If nothing in the workspace matches, the app says so instead of guessing. With the box unticked, chat works exactly as before.
+- Documents are stored next to the database in `data/chotubot.rag/`; deleting a document removes its file, text and index entries.
+
 ## Run locally
 
 Requires Python 3.11+ and Node 20+. From the repo root (PowerShell):
@@ -77,7 +84,7 @@ For UI development with hot reload, keep the backend running and use `cd fronten
 ## Tests
 
 ```powershell
-python -m pytest                           # backend (mocked, no network, no cost)
+python -m pytest                           # backend incl. document features (mocked, no network, no cost)
 cd frontend; npm test; npm run typecheck   # frontend
 python -m evals.evaluators.run             # golden-case evaluation with recorded model responses
 ```
@@ -85,5 +92,6 @@ python -m evals.evaluators.run             # golden-case evaluation with recorde
 ## Notes
 
 - Your prompts are sent to NVIDIA when using the `nim` provider; keep sensitive data out of test chats.
-- History is stored in `data/chotubot.sqlite3`; delete it to erase all chats.
+- History is stored in `data/chotubot.sqlite3`; delete it to erase all chats. Delete `data/chotubot.rag/` as well to erase all uploaded documents.
+- Start the app from a clean terminal: a leftover `CHOTU_PROVIDER=demo` or `CHOTU_EMBEDDER=hash` environment variable overrides `.env`.
 - Free-tier models can be slow or unavailable; pick another in Settings if a request times out.
