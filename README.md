@@ -52,9 +52,9 @@ Once the server is running, open <http://127.0.0.1:8765>:
 
 ### Ask questions about your own documents
 
-- **Documents** (top right): pick or create a workspace, upload text PDFs, Markdown or TXT files (max 10 MB), and reindex or delete them. Files are indexed locally with a small embedding model (`BAAI/bge-small-en-v1.5`, downloaded once, about 67 MB, into `data/models/`) and a FAISS index.
-- **Allow sharing:** with NVIDIA NIM, a document question sends the few matching excerpts to NVIDIA. That is off by default for each workspace; turn on **Allow sharing excerpts with the cloud model** in Documents (you can turn it off again). The offline demo provider needs no consent.
-- **Use my documents:** tick it under the chat box before sending. The answer cites its sources as `[1]`, `[2]`…; click a source to see the excerpt, file name and page/section/lines. If nothing in the workspace matches, the app says so instead of guessing. With the box unticked, chat works exactly as before.
+- **The + button** in the message box: **Add a file** uploads a text PDF, Markdown or TXT file (max 10 MB) to the current workspace; **Manage documents** lets you pick or create a workspace and reindex or delete files. Files are indexed locally with a small embedding model (`BAAI/bge-small-en-v1.5`, downloaded once, about 67 MB, into `data/models/`) and a FAISS index.
+- **Allow sharing:** with NVIDIA NIM, a document question sends the few matching excerpts to NVIDIA. That is off by default for each workspace; turn on **Allow sharing excerpts with the cloud model** in Manage documents (you can turn it off again). The offline demo provider needs no consent.
+- **Use my documents:** choose it from the + menu (a "Documents: …" chip appears; × turns it off). The answer cites its sources as `[1]`, `[2]`…; click a source to see the excerpt, file name and page/section/lines. If nothing in the workspace matches, the app says so instead of guessing. With the box unticked, chat works exactly as before.
 - Documents are stored next to the database in `data/chotubot.rag/`; deleting a document removes its file, text and index entries.
 
 ## Run locally

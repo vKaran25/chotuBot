@@ -52,9 +52,11 @@ describe("App with documents", () => {
     });
     const user = userEvent.setup();
     render(<App />);
-    const toggle = await screen.findByRole("checkbox", { name: "Use my documents" });
-    expect(toggle).not.toBeChecked();
+    await user.click(await screen.findByRole("button", { name: "Documents" }));
+    const toggle = screen.getByRole("menuitemcheckbox", { name: /Use my documents/ });
+    expect(toggle).toHaveAttribute("aria-checked", "false");
     await user.click(toggle);
+    expect(screen.getByText("Documents: Default")).toBeInTheDocument();
     await user.type(screen.getByLabelText("Message"), "How long does the battery last?");
     await user.click(screen.getByRole("button", { name: "Send" }));
     expect(await screen.findByText(/It lasts 14 hours/)).toBeInTheDocument();
@@ -73,7 +75,8 @@ describe("App with documents", () => {
     });
     const user = userEvent.setup();
     render(<App />);
-    await user.click(await screen.findByRole("checkbox", { name: "Use my documents" }));
+    await user.click(await screen.findByRole("button", { name: "Documents" }));
+    await user.click(screen.getByRole("menuitemcheckbox", { name: /Use my documents/ }));
     await user.type(screen.getByLabelText("Message"), "q");
     await user.click(screen.getByRole("button", { name: "Send" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("document_consent_required");
@@ -97,12 +100,37 @@ describe("App with documents", () => {
     expect(await screen.findByRole("list", { name: "Sources" })).toBeInTheDocument();
   });
 
-  it("opens the documents panel from the header", async () => {
+  it("opens document management from the + menu", async () => {
     mockFetch((url) => (url.startsWith("/api/documents?") ? { body: { documents: [] } } : undefined));
     const user = userEvent.setup();
     render(<App />);
-    await user.click(screen.getByRole("button", { name: "Documents" }));
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: "Documents" }));
+    await user.click(screen.getByRole("menuitem", { name: "Manage documents" }));
     expect(await screen.findByRole("dialog", { name: "Documents" })).toBeInTheDocument();
     expect(await screen.findByText("No documents in this workspace yet.")).toBeInTheDocument();
+  });
+
+  it("adds a file to the selected workspace from the + menu", async () => {
+    const DOC = { id: "d".repeat(32), workspace_id: "default", filename: "notes.md", file_type: "md", size_bytes: 4,
+      status: "indexed", chunk_count: 1, page_count: null, index_version: "v1", created_at: "x", updated_at: "x" };
+    const calls = mockFetch((url, init) => (url === "/api/documents" && init?.method === "POST" ? { status: 201, body: DOC } : undefined));
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("button", { name: "Documents" });
+    await user.upload(screen.getByLabelText("Add a file"), new File(["# hi"], "notes.md", { type: "text/markdown" }));
+    expect(await screen.findByText("Added notes.md to Default.")).toBeInTheDocument();
+    const up = calls.find((c) => c.url === "/api/documents");
+    expect((up?.body as FormData).get("workspace_id")).toBe("default");
+  });
+
+  it("closes the + menu with Escape", async () => {
+    mockFetch(() => undefined);
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Documents" }));
+    expect(screen.getByRole("menu", { name: "Documents" })).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 });

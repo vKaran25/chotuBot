@@ -47,6 +47,7 @@ export default function App() {
   const [useDocs, setUseDocs] = useState(false);
   const [docsOpen, setDocsOpen] = useState(false);
   const [citations, setCitations] = useState<Record<string, Citation[]>>({});
+  const [docNotice, setDocNotice] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const loadToken = useRef(0); // ignores responses for a conversation the user already left
   const endRef = useRef<HTMLDivElement>(null);
   const settingsBtnRef = useRef<HTMLButtonElement>(null);
@@ -240,6 +241,24 @@ export default function App() {
     }
   };
 
+  // Same upload API as the Documents panel; adds the file to the selected workspace.
+  const addFile = async (file: File) => {
+    setDocNotice({ kind: "ok", text: `Adding ${file.name}…` });
+    try {
+      const d = await api.uploadDocument(workspaceId, file);
+      setDocNotice({ kind: "ok", text: `Added ${d.filename} to ${activeWorkspace?.name ?? "your documents"}.` });
+      void refreshWorkspaces();
+    } catch (e) {
+      setDocNotice({ kind: "error", text: toUiError(e).message });
+    }
+  };
+
+  const openDocuments = () => {
+    setDocNotice(null);
+    setDocsOpen(true);
+    void refreshWorkspaces();
+  };
+
   const overlay = settingsOpen || pendingDelete !== null || docsOpen;
 
   return (
@@ -265,15 +284,7 @@ export default function App() {
           <span className="chat-title">{sessions.find((s) => s.id === activeId)?.title ?? "New conversation"}</span>
           <button
             type="button"
-            onClick={() => {
-              setDocsOpen(true);
-              void refreshWorkspaces();
-            }}
-          >
-            Documents
-          </button>
-          <button
-            type="button"
+            className="ghost"
             ref={settingsBtnRef}
             onClick={() => {
               setSettingsOpen(true);
@@ -291,8 +302,12 @@ export default function App() {
         )}
 
         <div className="messages" role="log" aria-live="polite" aria-label="Conversation">
+          <div className="thread">
           {messages.length === 0 && !pending && (
-            <p className="muted empty">Try “What is the status of atlas?” or “Search my notes for budget”.</p>
+            <div className="empty">
+              <p className="empty-title">How can I help?</p>
+              <p className="muted">Try “What is the status of atlas?” or “Search my notes for budget”.</p>
+            </div>
           )}
           {messages.map((m) => (
             <article key={m.id} className={`msg ${m.role}`}>
@@ -305,13 +320,20 @@ export default function App() {
             </article>
           ))}
           {pending && (
-            <p className="muted" role="status">
+            <p className="muted thinking" role="status">
               Thinking…
             </p>
           )}
           <div ref={endRef} />
+          </div>
         </div>
 
+        <div className="dock">
+        {docNotice && (
+          <p className={docNotice.kind === "error" ? "error" : "doc-notice"} role={docNotice.kind === "error" ? "alert" : "status"}>
+            {docNotice.text}
+          </p>
+        )}
         {error && (
           <p className="error" role="alert">
             {error.message} <span className="muted">({error.code})</span>
@@ -334,7 +356,10 @@ export default function App() {
           useDocuments={useDocs}
           onToggleDocuments={workspaces ? setUseDocs : undefined}
           workspaceName={activeWorkspace?.name}
+          onAddFile={workspaces ? (f) => void addFile(f) : undefined}
+          onManageDocuments={workspaces ? openDocuments : undefined}
         />
+        </div>
       </main>
 
       {pendingDelete && (
