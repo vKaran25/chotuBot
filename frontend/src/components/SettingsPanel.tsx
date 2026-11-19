@@ -73,7 +73,6 @@ export default function SettingsPanel({ settings, usage, onClose, onSave }: Prop
             ) : (
               <p className="muted">Loading…</p>
             )}
-            <p className="muted">Token counts come from the provider when it reports them.</p>
           </section>
 
           {msg && (

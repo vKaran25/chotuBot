@@ -6,7 +6,7 @@ import logging
 import os
 import threading
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from app.agent.graph import ChatError
 from app.config import Settings
@@ -17,7 +17,7 @@ from app.rag.embeddings import Embedder, build_embedder
 from app.rag.errors import DocumentError, not_found
 from app.rag.extract import EXTENSIONS, clean_filename, file_type_for, validate_and_extract
 from app.rag.index import IndexManager
-from app.rag.retriever import FaissRetriever, Retriever
+from app.rag.retriever import FaissRetriever, Hit, Retriever
 from app.security.documents import require_sharing_consent
 from app.storage.db import new_id
 from app.storage.documents import DocumentStore, DuplicateDocument, WorkspaceNameTaken
@@ -165,16 +165,39 @@ class DocumentService:
         return {"citations": self.store.session_citations(session_id)}
 
     # ---- document chat --------------------------------------------------
-    def chat(self, message: str, session_id: str | None, ws_id: str) -> dict[str, Any]:
+    def _turn(self, message: str, session_id: str | None, ws_id: str) -> DocumentTurn:
         ws = self.workspace(ws_id)
         require_sharing_consent(self.settings, ws)  # before anything could reach the cloud model
         if session_id is not None and not self.storage.session_exists(session_id):
             raise ChatError(404, "session_not_found", "No such conversation.")
         hits = [h for h in self.retriever.retrieve(ws_id, message, TOP_K) if h.score >= self.retriever.min_score]
-        turn = DocumentTurn(hits, self.settings.provider, message)
-        result = self.chat_service.chat(message, session_id, context=turn)
+        if hits:
+            return DocumentTurn(hits, self.settings.provider, message)
+        # Nothing matches closely (a vague question, or one not about the files): like large chat assistants, still
+        # give the model the opening passages of the files and let it decide (owner decision 2026-11-19).
+        opening = [Hit(r["id"], r["document_id"], r["filename"], r["text"], r["location"], 0.0)
+                   for r in self.store.opening_chunks(ws_id, self.embedder.name, TOP_K)]
+        return DocumentTurn(opening, self.settings.provider, message, overview=True)
+
+    def _citations(self, result: dict[str, Any], ws_id: str, turn: DocumentTurn) -> list[dict[str, Any]]:
         items = turn.citation_items()
-        result["citations"] = (
-            self.store.add_citations(result["session_id"], result["request_id"], ws_id, items) if items else []
-        )
+        return self.store.add_citations(result["session_id"], result["request_id"], ws_id, items) if items else []
+
+    def chat(self, message: str, session_id: str | None, ws_id: str) -> dict[str, Any]:
+        turn = self._turn(message, session_id, ws_id)
+        result = self.chat_service.chat(message, session_id, context=turn)
+        result["citations"] = self._citations(result, ws_id, turn)
         return result
+
+    def chat_stream(self, message: str, session_id: str | None, ws_id: str) -> Iterator[dict[str, Any]]:
+        """Same checks as `chat`, raised eagerly; then the streamed events with citations added to `done`."""
+        turn = self._turn(message, session_id, ws_id)
+        events = self.chat_service.chat_stream(message, session_id, context=turn)
+
+        def with_citations() -> Iterator[dict[str, Any]]:
+            for ev in events:
+                if ev["type"] == "done":
+                    ev["response"]["citations"] = self._citations(ev["response"], ws_id, turn)
+                yield ev
+
+        return with_citations()

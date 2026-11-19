@@ -1,3 +1,4 @@
+import json
 import re
 
 from playwright.sync_api import expect
@@ -83,6 +84,18 @@ def is_chat(request):
     return request.method == "POST" and request.url.endswith("/api/chat")
 
 
+def chat_json(response):
+    """The chat reply as an object. The web UI asks for a streamed reply (docs/specs/chat.md, "Streaming"): the final
+    `done` event carries exactly the object the JSON response would; an `error` event carries `{"error": ...}`."""
+    if "text/event-stream" not in (response.headers.get("content-type") or ""):
+        return response.json()
+    blocks = [b.strip() for b in response.text().split("\n\n")]
+    events = [json.loads(b[len("data: "):]) for b in blocks if b.startswith("data: ")]
+    last = events[-1]
+    assert last["type"] in ("done", "error"), events
+    return last["response"] if last["type"] == "done" else {"error": last["error"]}
+
+
 def send(page, text, *, enter=False):
     message_box(page).fill(text)
     with page.expect_response(lambda response: is_chat(response.request)) as result:
@@ -92,7 +105,7 @@ def send(page, text, *, enter=False):
             send_button(page).click()
     response = result.value
     assert response.ok
-    return response.json()
+    return chat_json(response)
 
 
 def expect_exchange(page, text, answer):
@@ -340,7 +353,7 @@ def test_UI_AC20_missing_key_notice_and_failed_send_restores_draft(page, make_ap
     with page.expect_response(lambda response: is_chat(response.request)) as result:
         send_button(page).click()
     assert result.value.status == 503
-    error = result.value.json()["error"]
+    error = chat_json(result.value)["error"]
     assert error["code"] == "missing_api_key"
     expect(page.get_by_role("alert")).to_contain_text(error["message"])
     expect(box).to_have_value("hello draft")
@@ -398,7 +411,7 @@ def test_UI_AC24_pending_reply_disables_send_and_shows_status(ui):
     [route] = pending
     with ui.expect_response(lambda response: is_chat(response.request)) as result:
         route.continue_()
-    expect_exchange(ui, "hello", result.value.json()["message"]["content"])
+    expect_exchange(ui, "hello", chat_json(result.value)["message"]["content"])
     expect(sending).to_have_count(0)
     expect(thinking).to_be_hidden()
 
@@ -444,7 +457,7 @@ def test_UI_EDGE2_pending_reply_stays_with_original_conversation(page, app):
     [route] = pending
     with page.expect_response(lambda response: is_chat(response.request)) as result:
         route.continue_()
-    response = result.value.json()
+    response = chat_json(result.value)
     assert response["session_id"] == first
     assert app.session(first)["messages"][-1]["content"] == response["message"]["content"]
     expect(row(page, "first greeting")).to_contain_text("4 messages")

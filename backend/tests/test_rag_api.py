@@ -309,19 +309,49 @@ def test_cited_answer_with_real_provider_path(nim, tmp_db):
     assert all("<excerpts>" not in str(m.content) for m in replay)
 
 
-def test_no_evidence_reply_without_model_call(nim, tmp_db):
+def test_empty_workspace_gets_fixed_reply_without_model_call(nim):
     c, f = nim
-    upload(c, TXT)
-    c.put("/api/workspaces/default/consent", json={"allowed": True})
-    r = c.post("/api/chat", json={"message": "zebra xylophone quantum", "use_documents": True}).json()
+    empty = c.post("/api/workspaces", json={"name": "Empty"}).json()["id"]
+    c.put(f"/api/workspaces/{empty}/consent", json={"allowed": True})
+    r = c.post("/api/chat", json={"message": "anything at all", "use_documents": True, "workspace_id": empty}).json()
     assert r["message"]["content"] == NO_EVIDENCE_REPLY and r["citations"] == []
     assert f.built == 0 and r["tool_activity"] == []
     rec = c.get("/api/usage").json()["records"][0]
     assert rec["status"] == "ok" and rec["total_tokens"] is None and rec["tool_call_count"] == 0
-    empty = c.post("/api/workspaces", json={"name": "Empty"}).json()["id"]
-    c.put(f"/api/workspaces/{empty}/consent", json={"allowed": True})
-    r = c.post("/api/chat", json={"message": "anything at all", "use_documents": True, "workspace_id": empty}).json()
-    assert r["message"]["content"] == NO_EVIDENCE_REPLY
+
+
+def test_weak_match_sends_opening_passages_and_allows_a_general_answer(nim):
+    """Owner decision 2026-11-19 (R2-RET-2): no close match -> the model still sees the files' opening passages."""
+    c, f = nim
+    upload(c, PDF)
+    upload(c, TXT)
+    c.put("/api/workspaces/default/consent", json={"allowed": True})
+    f.scripts.append([text("Paris is the capital of France.")])
+    r = c.post("/api/chat", json={"message": "zebra xylophone quantum capital of France", "use_documents": True}).json()
+    assert r["message"]["content"] == "Paris is the capital of France." and r["citations"] == []
+    sent = f.models[0].seen[0][-1].content
+    assert "opening passages" in sent and "<excerpts>" in sent
+    assert "[1] (kestrel-budget.txt" in sent and "[2] (orion-handbook.pdf, page 1)" in sent  # one from each file in turn
+    assert "not about the files, answer normally" in sent
+
+
+def test_vague_question_is_answered_from_opening_passages_with_citations(nim):
+    c, f = nim
+    upload(c, PDF)
+    c.put("/api/workspaces/default/consent", json={"allowed": True})
+    f.scripts.append([text("It is a handbook for the Orion rover [1].")])
+    r = c.post("/api/chat", json={"message": "what do you see in this file?", "use_documents": True}).json()
+    assert [ci["n"] for ci in r["citations"]] == [1] and r["citations"][0]["filename"] == PDF
+
+
+def test_demo_vague_question_quotes_files_and_tool_question_works(demo):
+    c, _ = demo
+    upload(c, PDF)
+    r = c.post("/api/chat", json={"message": "what is in this document?", "use_documents": True}).json()
+    assert r["message"]["content"].startswith(DEMO_PREFIX) and r["citations"]
+    r = c.post("/api/chat", json={"message": "What is the status of atlas?", "use_documents": True}).json()
+    assert r["citations"] == [] and r["tool_activity"][0]["name"] == "get_project_status"
+    assert "Atlas" in r["message"]["content"]
 
 
 def test_uncited_or_only_invalid_citations(nim):

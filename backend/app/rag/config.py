@@ -20,7 +20,7 @@ EMBED_MODEL = "BAAI/bge-small-en-v1.5"  # 384-d, English, via fastembed (ONNX, C
 EMBED_DIM = 384
 # Uncalibrated placeholder cutoffs (cosine similarity). Phase 3 evaluations calibrate these.
 FASTEMBED_MIN_SCORE = 0.60
-HASH_MIN_SCORE = 0.15
+HASH_MIN_SCORE = 0.20  # test-only embedder; above single-word hash collisions
 MAX_FILE_BYTES = 10 * 1024 * 1024
 MAX_UPLOAD_REQUEST_BYTES = MAX_FILE_BYTES + 512 * 1024  # multipart framing headroom
 MAX_FILENAME_CHARS = 200

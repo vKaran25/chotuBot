@@ -109,13 +109,11 @@ pre { margin: 0.2rem 0 0; padding: 0.6rem; background: var(--rail); border: 1px 
 .dock { width: min(46rem, calc(100% - 2rem)); margin: 0 auto; padding: 0.25rem 0 1rem; display: flex; flex-direction: column; gap: 0.5rem; }
 .error { margin: 0; padding: 0.55rem 0.8rem; border: 1px solid var(--err); color: var(--err); border-radius: 10px; font-size: 0.9rem; overflow-wrap: anywhere; }
 .error button { margin-left: 0.25rem; min-height: 32px; padding: 0.25rem 0.7rem; color: var(--ink); }
-.doc-notice { margin: 0; font-size: 0.85rem; color: var(--quiet); padding: 0 0.4rem; }
 .composer {
   display: flex; flex-direction: column; gap: 0.2rem; padding: 0.55rem 0.55rem 0.5rem 0.95rem;
   background: var(--field); border: 1px solid var(--line); border-radius: 22px; box-shadow: 0 1px 2px rgba(29, 33, 37, 0.05);
 }
 .composer:focus-within { border-color: color-mix(in srgb, var(--ink) 30%, var(--line)); }
-.composer.docs-on { border-color: var(--accent); }
 .composer textarea {
   width: 100%; resize: none; border: none; outline: none; background: var(--field); padding: 0.35rem 0;
   min-height: 1.6rem; max-height: 12rem; field-sizing: content; line-height: 1.5; font-size: 1rem;
@@ -133,28 +131,6 @@ pre { margin: 0.2rem 0 0; padding: 0.6rem; background: var(--rail); border: 1px 
 }
 .send:hover:not(:disabled) { background: var(--ink); opacity: 0.85; }
 .send:disabled { background: var(--wash); color: var(--quiet); opacity: 1; }
-.doc-chip {
-  display: inline-flex; align-items: center; gap: 0.15rem; padding: 0.1rem 0.15rem 0.1rem 0.65rem; border-radius: 999px;
-  background: var(--accent-wash); color: var(--accent); font-size: 0.82rem; font-weight: 500; max-width: 60%; overflow: hidden;
-}
-.chip-x { border: none; background: transparent; color: inherit; min-height: 24px; width: 24px; padding: 0; border-radius: 50%; font-size: 1rem; line-height: 1; }
-.chip-x:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 15%, transparent); }
-
-.plus-wrap { position: relative; }
-.plus-menu {
-  position: absolute; left: 0; bottom: calc(100% + 0.5rem); z-index: 15; width: 17rem; padding: 0.3rem;
-  background: var(--canvas); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow);
-  display: flex; flex-direction: column;
-}
-.plus-menu button {
-  border: none; background: transparent; text-align: left; border-radius: 9px; padding: 0.5rem 0.65rem;
-  display: flex; flex-direction: column; gap: 0.05rem; min-height: 0;
-}
-.plus-menu button:hover, .plus-menu button:focus-visible { background: var(--wash); outline-offset: -2px; }
-.item-row { display: flex; justify-content: space-between; align-items: center; width: 100%; }
-.item-check { color: var(--accent); display: inline-grid; width: 16px; height: 16px; }
-.item-note { font-size: 0.78rem; color: var(--quiet); }
-
 /* ---- overlays ---- */
 .scrim { position: fixed; inset: 0; background: rgba(15, 17, 19, 0.32); z-index: 20; }
 .panel {
@@ -182,7 +158,6 @@ th, td { text-align: left; padding: 0.35rem 0.4rem; border-bottom: 1px solid var
   .sidebar.open { transform: none; visibility: visible; }
   .messages { padding: 0.75rem; }
   .dock { width: calc(100% - 1.5rem); padding-bottom: 0.75rem; }
-  .plus-menu { width: min(17rem, calc(100vw - 2rem)); }
 }
 @media (prefers-reduced-motion: reduce) { .sidebar { transition: none; } }
 
@@ -228,11 +203,19 @@ button.danger:hover:not(:disabled) { background: var(--err); filter: brightness(
 .md-table { overflow-x: auto; }
 .md table { border-collapse: collapse; font-size: 0.9em; }
 
-/* ---- documents and sources ---- */
-.check { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; }
-.panel .check input { width: auto; margin: 0; accent-color: var(--accent); }
-.panel-body .check { color: var(--ink); font-size: 0.93rem; margin: 0; }
-.citations ol { list-style: none; margin: 0.7rem 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.35rem; }
+/* ---- attached files and sources ---- */
+.attachments { list-style: none; margin: 0 0 0.25rem -0.35rem; padding: 0; display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.attachment {
+  display: inline-flex; align-items: center; gap: 0.4rem; max-width: 100%; padding: 0.3rem 0.3rem 0.3rem 0.6rem;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--rail); font-size: 0.85rem; color: var(--ink);
+}
+.attachment svg { color: var(--accent); flex: none; }
+.attachment-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 16rem; }
+.attachment-state { color: var(--quiet); font-size: 0.8rem; padding-right: 0.35rem; }
+.attachment.is-uploading svg { color: var(--quiet); }
+.chip-x { border: none; background: transparent; color: var(--quiet); min-height: 24px; width: 24px; padding: 0; border-radius: 50%; font-size: 1rem; line-height: 1; }
+.chip-x:hover:not(:disabled) { background: var(--wash); color: var(--ink); }
+.panel-body .citations ol { list-style: none; margin: 0.7rem 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.35rem; }
 .cite {
   font-size: 0.78rem; min-height: 28px; padding: 0.15rem 0.6rem; border-radius: 999px; border: 1px solid transparent;
   background: var(--accent-wash); color: var(--accent); max-width: 100%; overflow-wrap: anywhere; text-align: left;
@@ -242,9 +225,3 @@ button.danger:hover:not(:disabled) { background: var(--err); filter: brightness(
 .cite-gone:hover:not(:disabled) { background: var(--wash); border-color: var(--line); }
 .excerpt { max-width: min(40rem, calc(100vw - 2rem)); }
 .excerpt-text { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 50vh; overflow-y: auto; padding: 0.75rem; border-radius: 10px; background: var(--rail); border: 1px solid var(--line); font-size: 0.93rem; }
-.docs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-.doc { display: flex; flex-direction: column; gap: 0.15rem; padding: 0.65rem 0; border-bottom: 1px solid var(--line); }
-.doc:first-child { border-top: 1px solid var(--line); }
-.doc-name { font-weight: 500; overflow-wrap: anywhere; }
-.doc-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.3rem; }
-.doc-actions button { min-height: 32px; padding: 0.25rem 0.7rem; font-size: 0.88rem; }

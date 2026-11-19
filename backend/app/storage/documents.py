@@ -266,6 +266,19 @@ class DocumentStore:
             return [], np.zeros((0, dim), dtype=np.float32)
         return [r["id"] for r in rows], np.stack([np.frombuffer(r["vector"], dtype=np.float32) for r in rows])
 
+    def opening_chunks(self, ws: str, embedder: str, limit: int) -> list[dict[str, Any]]:
+        """The first chunks of each document, taken in turn (newest document first): chunk 0 of every document,
+        then chunk 1, ... Used when no chunk matches a question closely (owner decision 2026-11-19)."""
+        with self._conn() as c:
+            rows = c.execute(
+                "SELECT ch.id, ch.document_id, ch.workspace_id, ch.text, ch.location, d.filename "
+                "FROM rag_chunks ch JOIN rag_documents d ON d.id = ch.document_id "
+                "WHERE ch.workspace_id=? AND ch.embedder=? AND ch.index_version=? "
+                "ORDER BY ch.ordinal, d.created_at DESC, d.rowid DESC LIMIT ?",
+                (ws, embedder, INDEX_VERSION, limit),
+            ).fetchall()
+        return [{**dict(r), "location": json.loads(r["location"])} for r in rows]
+
     def get_chunks(self, ids: list[str]) -> dict[str, dict[str, Any]]:
         if not ids:
             return {}

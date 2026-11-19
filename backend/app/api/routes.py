@@ -1,9 +1,11 @@
 """HTTP capabilities: health, chat, sessions, settings, usage (P1-REQ-1, -2, -6, -7, -9, -11)."""
 from __future__ import annotations
 
-from typing import Any
+import json
+from typing import Any, Iterator
 
 from fastapi import APIRouter, Request, Response
+from fastapi.responses import StreamingResponse
 
 from app.agent.graph import ChatError
 from app.api.schemas import SESSION_ID_PATTERN, ChatRequest, CreateSessionRequest, SettingsUpdate
@@ -26,11 +28,23 @@ def health(request: Request) -> dict[str, Any]:
     return {"status": "ok", "version": VERSION}
 
 
-@router.post("/chat")
-def chat(body: ChatRequest, request: Request) -> dict[str, Any]:
+def _sse(events) -> Iterator[str]:
+    for ev in events:
+        yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
+
+
+@router.post("/chat", response_model=None)
+def chat(body: ChatRequest, request: Request) -> dict[str, Any] | StreamingResponse:
+    svc = _svc(request)
+    # Streaming (owner-approved 2026-11-19) only when the client asks for it; otherwise the JSON contract is unchanged.
+    if "text/event-stream" in request.headers.get("accept", ""):
+        events = (svc.documents.chat_stream(body.message, body.session_id, body.workspace_id) if body.use_documents
+                  else svc.chat.chat_stream(body.message, body.session_id))
+        return StreamingResponse(_sse(events), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
     if body.use_documents:  # Phase 2 document question (docs/specs/document-chat.md)
-        return _svc(request).documents.chat(body.message, body.session_id, body.workspace_id)
-    return _svc(request).chat.chat(body.message, body.session_id)
+        return svc.documents.chat(body.message, body.session_id, body.workspace_id)
+    return svc.chat.chat(body.message, body.session_id)
 
 
 @router.get("/sessions")
